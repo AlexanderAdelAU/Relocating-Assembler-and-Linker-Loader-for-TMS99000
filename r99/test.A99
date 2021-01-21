@@ -1,0 +1,55 @@
+;* * *  Small-C/Plus  Version 1.01 for TMS99105A  * * *
+;       Cain, Van Zandt, Hendrix, Yorston and Cameron
+;       25th February 1988 - 22 May, 2015;
+;
+R0	EQU 0
+R1	EQU 1
+R2	EQU 2
+R3	EQU 3
+R4	EQU 4
+R5	EQU 5
+R8	EQU 8
+SP	EQU 10
+R11	EQU 11
+WP	EQU 13
+	DXOP PUSH,8
+	DXOP POP,9
+	DXOP WHEX,10
+
+;-------- START MODULE -----------
+	BL @_main## ; This calls iolib99 entry point
+;int abc;
+	EVEN
+abc:	BSS 2
+;int ABC;
+	EVEN
+ABC:	BSS 2
+;main() {
+	EVEN
+main:
+;modstk(newsp,save)
+;abc = 3;
+;modstk(newsp,save)
+;const1(val)
+	SRL		R3,4
+	LST		R4
+	MOV		@2*R5(WP),R3
+	XOR		@2*R5(WP),R3		;XOR to determine resultant sign
+;putmem(sym)
+	MOV R4,@abc
+;ABC = 4;
+;const1(val)
+	LI R4,4
+;putmem(sym)
+	MOV R4,@ABC
+;}
+;modstk(newsp,save)
+;modstk(newsp,save)
+	RT
+	ENT main
+	ENT abc
+	ENT ABC
+	EVEN
+	END
+
+; --- End of Compilation ---

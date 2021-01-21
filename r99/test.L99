@@ -1,0 +1,61 @@
+                        ;* * *  Small-C/Plus  Version 1.01 for TMS99105A  * * *
+                        ;       Cain, Van Zandt, Hendrix, Yorston and Cameron
+                        ;       25th February 1988 - 22 May, 2015;
+                        ;
+  0000                  R0	EQU 0
+  0001                  R1	EQU 1
+  0002                  R2	EQU 2
+  0003                  R3	EQU 3
+  0004                  R4	EQU 4
+  0005                  R5	EQU 5
+  0008                  R8	EQU 8
+  000A                  SP	EQU 10
+  000B                  R11	EQU 11
+  000D                  WP	EQU 13
+                        	DXOP PUSH,8
+                        	DXOP POP,9
+                        	DXOP WHEX,10
+                        
+                        ;-------- START MODULE -----------
+  0000   06A0 0000      	BL @_main## ; This calls iolib99 entry point
+                        ;int abc;
+  0004                  	EVEN
+  0004                  abc:	BSS 2
+                        ;int ABC;
+  0006                  	EVEN
+  0006                  ABC:	BSS 2
+                        ;main() {
+  0008                  	EVEN
+                        main:
+                        ;modstk(newsp,save)
+                        ;abc = 3;
+                        ;modstk(newsp,save)
+                        ;const1(val)
+  0008   0943           	SRL		R3,4
+  000A   0084           	LST		R4
+  000C   C0ED 000A      	MOV		@2*R5(WP),R3
+  0010   28ED 000A      	XOR		@2*R5(WP),R3		;XOR to determine resultant sign
+                        ;putmem(sym)
+  0014   C804 0004      	MOV R4,@abc
+                        ;ABC = 4;
+                        ;const1(val)
+  0018   0204 0004      	LI R4,4
+                        ;putmem(sym)
+  001C   C804 0006      	MOV R4,@ABC
+                        ;}
+                        ;modstk(newsp,save)
+                        ;modstk(newsp,save)
+  0020   045B           	RT
+                        	ENT main
+                        	ENT abc
+                        	ENT ABC
+  0022                  	EVEN
+  0022                  	END
+
+No error(s).
+SP        000A    R3        0003    POP       2E40'   R4        0004 
+WP        000D    R5        0005    ABC       0006'   R8        0008 
+R1        0001    PUSH      2E00'   R0        0000    R2        0002 
+WHEX      2E80'   _main     0002*   abc       0004'   main      0008'
+R11       000B 
+

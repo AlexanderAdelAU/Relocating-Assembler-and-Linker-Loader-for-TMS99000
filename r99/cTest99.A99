@@ -1,0 +1,118 @@
+;* * *  Small-C/Plus  Version 1.01 for TMS99105A  * * *
+;       Cain, Van Zandt, Hendrix, Yorston and Cameron
+;       25th February 1988 - 22 May, 2015;
+;
+R0	EQU 0
+R1	EQU 1
+R2	EQU 2
+R3	EQU 3
+R4	EQU 4
+R8	EQU 8
+SP	EQU 10
+R11	EQU 11
+	DXOP CALL,6
+	DXOP RET,7
+	DXOP PUSH,8
+	DXOP POP,9
+	DXOP WHEX,10
+
+;-------- START MODULE -----------
+	NAM cTest99
+;extern int j;
+;extern int k;
+;int lx,lz;
+	EVEN
+lx:	BSS 2
+	EVEN
+lz:	BSS 2
+;main() {
+	EVEN
+main:
+;modstk(newsp,save)
+;j = lx;
+;modstk(newsp,save)
+;getmem(sym)
+	MOV @lx,R4
+;putmem(sym)
+	MOV R4,@j
+;j = lx;
+;getmem(sym)
+	MOV @lx,R4
+;putmem(sym)
+	MOV R4,@j
+;j = lz;
+;getmem(sym)
+	MOV @lz,R4
+;putmem(sym)
+	MOV R4,@j
+;j = lx;
+;getmem(sym)
+	MOV @lx,R4
+;putmem(sym)
+	MOV R4,@j
+;k = lx;
+;getmem(sym)
+	MOV @lx,R4
+;putmem(sym)
+	MOV R4,@k
+;j = lx;
+;getmem(sym)
+	MOV @lx,R4
+;putmem(sym)
+	MOV R4,@j
+;j = lx;
+;getmem(sym)
+	MOV @lx,R4
+;putmem(sym)
+	MOV R4,@j
+;j = lz;
+;getmem(sym)
+	MOV @lz,R4
+;putmem(sym)
+	MOV R4,@j
+;j = lx;
+;getmem(sym)
+	MOV @lx,R4
+;putmem(sym)
+	MOV R4,@j
+;k = lx;
+;getmem(sym)
+	MOV @lx,R4
+;putmem(sym)
+	MOV R4,@k
+;k = lx;
+;getmem(sym)
+	MOV @lx,R4
+;putmem(sym)
+	MOV R4,@k
+;k <<= 8;
+;getmem(sym)
+	MOV @k,R4
+;zpush()
+	DECT SP
+	MOV R4,*SP
+;const1(val)
+	LI R4,8
+;zpop()
+	MOV *SP+,R3
+;callrts()
+	BL @_ccasl##
+;putmem(sym)
+	MOV R4,@k
+;abc();
+;zcall()
+	BL @abc
+;modstk(newsp,save)
+;}
+;modstk(newsp,save)
+;modstk(newsp,save)
+	RT
+	ENT main
+	EXT j
+	EXT k
+	EXT abc
+	ENT lx
+	ENT lz
+	END
+
+; --- End of Compilation ---
