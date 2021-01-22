@@ -11,4 +11,11 @@ The Assembler is invokded using the following syntax
 1.   SC => Source File (.A99) will be found on drive C in the same directory as R99
 2.   HC => HEX File (.R99) output file will be created on drive C in the same directory as R99, and
 3.   LC => LST File (.L99) output file will be created on drive C in the same directory as R99
+
+The linker loader which takes the .R99 (object modules) and .LIB files will produce the executable .COM file by resolving all the external references either within the .R99 or .LIB files.
+
+The Linker is invokded using the following syntax
+
+***link99  -M  -S cTest99 abc clib99.LIB iolib99.LIB*** in the case where libraries and object modules are available or 
+***link99  -M  -S cTest99 abc call etc *** in the case where object modules are to be used. 
   
