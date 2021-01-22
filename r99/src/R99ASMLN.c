@@ -1,7 +1,8 @@
 /*
- TMS9900/99105  Cross-Assembler  v. 1.0
+ TMS9900/99105  Relocatable Cross-Assembler  v. 1.0
 
- January, 1985
+ January, 1985 - Original version
+ November, 2020 - Latest version
 
 
  Original 6800 version Copyright (c) 1980 William C. Colley, III.
@@ -10,7 +11,7 @@
 
 
 
- File:	a99asmln.c
+ File:	r99asmln.c
 
  Line assembly routine.
  */
