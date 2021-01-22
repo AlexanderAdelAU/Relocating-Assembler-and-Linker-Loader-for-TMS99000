@@ -18,4 +18,7 @@ The Linker is invokded using the following syntax
 
 ***link99  -M  -S cTest99 abc clib99.LIB iolib99.LIB*** in the case where libraries and object modules are available or 
 ***link99  -M  -S cTest99 abc call etc *** in the case where object modules are to be used. 
+
+***Note:*** the Microsoft REL format is described here https://www.seasip.info/Cpm/rel.html#:~:text=The%20REL%20format%20is%20generated%20by%20Microsoft's%20M80%20and%20Digital%20Research's%20RMAC.&text=REL%20files%20contain%20information%20encoded,value%20of%20the%20location%20counter.
+
   
