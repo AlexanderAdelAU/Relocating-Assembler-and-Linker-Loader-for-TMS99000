@@ -7,7 +7,7 @@ The Relocating assemble using the standar Microsoft REL format with the exceptio
 
 The Assembler is invokded using the following syntax
 
-R99 fileName SCHCLC where fileName is is assumed to be of .A99 format (no extension specified) and 
+***R99 fileName SCHCLC *** 
 1.   SC => Source File (.A99) will be found on drive C in the same directory as R99
 2.   HC => HEX File (.R99) output file will be created on drive C in the same directory as R99, and
 3.   LC => LST File (.L99) output file will be created on drive C in the same directory as R99
