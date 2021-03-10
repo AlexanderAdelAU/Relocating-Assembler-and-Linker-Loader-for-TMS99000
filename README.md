@@ -22,3 +22,74 @@ The Linker is invokded using the following syntax
 ***Note:*** the Microsoft REL format is described here https://www.seasip.info/Cpm/rel.html#:~:text=The%20REL%20format%20is%20generated%20by%20Microsoft's%20M80%20and%20Digital%20Research's%20RMAC.&text=REL%20files%20contain%20information%20encoded,value%20of%20the%20location%20counter.
 
   
+A typical monitoring output that the linker produces is below.  In the example, printf is being loaded, linked and resolved.
+
+Linking.....
+Searching Library for symbol-> printf    
+
+Loading.....printf\pri
+      0 Data Bytes at    0"    0 printf\pri
+
+   1230 Code Bytes at  A9E'  BA2 printf\pri
+     1B82 -t-xr -s-_ccgt     
+     183E -t-xr -s-_fpgt     
+     1160 -t-xr -s-_cceq     
+     1A56 -t-xr -s-_fpdiv    
+     1780 -t-xr -s-_fpeq     
+     181C -t-xr -s-_minusfa  
+      AA0 -t-ep -s-_Count    
+     1C98 -t-xr -s-putc      
+     108A -t-xr -s-_ccswitc  
+     1AC4 -t-xr -s-_fload    
+      EBA -t-xr -s-itod      
+      A9E -t-ep -s-printf\pri
+      EE4 -t-xr -s-itox      
+        0 -t-xr -s-_ccfloor  
+        0 -t-xr -s-_ccfloor  
+     19EC -t-xr -s-_ccle     
+      E96 -t-xr -s-putchar   
+     10C4 -t-xr -s-_ccne     
+     1ACC -t-xr -s-_fpsub    
+     1AC8 -t-xr -s-_fpmul    
+     1A28 -t-xr -s-_fpadd    
+     1AB4 -t-xr -s-float     
+     18E4 -t-xr -s-_fplt     
+     1986 -t-xr -s-_fpge     
+     1A30 -t-xr -s-floor     
+     131A -t-ep -s-ftoa      
+      B92 -t-ep -s-_printf   
+      DD0 -t-xr -s-utoi      
+     16F2 -t-ep -s-ftoe      
+     1C70 -t-ep -s-_outc     
+      F58 -t-xr -s-itou      
+      A9E -t-ep -s-_String   
+        0 -t-xr -s-_ccfloat  
+        0 -t-xr -s-_ccfloat  
+     1BF2 -t-xr -s-_ccdiv    
+      ADC -t-ep -s-fprintf   
+      AA2 -t-ep -s-printf    
+     1ABA -t-xr -s-_fpush    
+        0 -t-xr -s-_ccifix   
+        0 -t-xr -s-_ccifix   
+     1AD2 -t-xr -s-_fstore   
+      B3C -t-ep -s-sprintf   
+      B40 -t-xr -s-_argcnt   
+     1A5E -t-xr -s-ifix      
+
+Linking.....
+ Resolving external xt =    1  A62' to  BA6 for printf    nxr =    0
+ Resolving external xt =    1  A2C' to  BA6 for printf    nxr =  A2C
+ Resolving external xt =    1  9F6' to  BA6 for printf    nxr =  9F6
+ Resolving external xt =    1  740' to  BA6 for printf    nxr =  740
+ Resolving external xt =    1  420' to  BA6 for printf    nxr =  420
+ Resolving external xt =    1  3F6' to  BA6 for printf    nxr =  3F6
+ Resolving external xt =    1  3AE' to  BA6 for printf    nxr =  3AE
+ Resolving external xt =    1  354' to  BA6 for printf    nxr =  354
+ Resolving external xt =    1  310' to  BA6 for printf    nxr =  310
+ Resolving external xt =    1  2C2' to  BA6 for printf    nxr =  2C2
+ Resolving external xt =    1  206' to  BA6 for printf    nxr =  206
+ Resolving external xt =    1  1E4' to  BA6 for printf    nxr =  1E4
+ Resolving external xt =    1  1CC' to  BA6 for printf    nxr =  1CC
+ Resolving external xt =    1  15A' to  BA6 for printf    nxr =  15A
+ Resolving external xt =    1   E8' to  BA6 for printf    nxr =   E8
+ Resolving external xt =    1   76' to  BA6 for printf    nxr =   76utoi  
