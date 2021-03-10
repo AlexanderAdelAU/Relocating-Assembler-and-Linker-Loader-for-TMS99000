@@ -23,7 +23,7 @@ The Linker is invokded using the following syntax
 
   
 A typical monitoring output that the linker produces is below.  In the example, printf is being loaded, linked and resolved.
-
+```
 Linking.....
 Searching Library for symbol-> printf    
 
@@ -93,3 +93,4 @@ Linking.....
  Resolving external xt =    1  15A' to  BA6 for printf    nxr =  15A
  Resolving external xt =    1   E8' to  BA6 for printf    nxr =   E8
  Resolving external xt =    1   76' to  BA6 for printf    nxr =   76utoi  
+```
