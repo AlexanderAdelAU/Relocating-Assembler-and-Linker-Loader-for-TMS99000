@@ -105,7 +105,7 @@
 #define NAMESIZE   15
 #define MAXFIL     20
 #define STACK     512			/* allow for stack space */
-#define AUXBUF   8096*2			/* aux buffer for reference file */
+#define AUXBUF   8096			/* aux buffer for reference file */
 #define RELMEM   (2000*CRELSIZE)	/* use for rel table 1000 entries 5 bytes each */
 #define MAXOPEN     6			/* maximum files opened */
 #define OHDOPEN   1024			/* memory overhead per open file */
@@ -338,7 +338,8 @@ getmem() {
 	max = avail(YES); /* how much available? */
 	max -= STACK + RELMEM + AUXBUF + AUXBUF + (MAXOPEN * OHDOPEN);
 	bpnext = buffer; /*  malloc(max);	*//* allocate space */
-	snext = buffer + (max - SSZ); /* first entry */
+/*	snext = buffer + (max - SSZ); */ /* first entry */
+	snext = buffer + MAXMEM - SSZ;  /* first entry */
 	sfree = 0; /* no reusable entries yet */
 
 	/* Need to offset the index crelptr from zero due to the method of using pointers
@@ -619,7 +620,7 @@ load() {
 				putls("\n");
 			}
 			/* On windows system this is not needed as we have ample memory*/
-			break;
+		/*	break; */
 			if (!csfd && (big || (bpnext + field) > (snext - CUSHION))) {
 				cdisk = cloc; /* disk overflow point */
 				 /* open overflow file */
@@ -882,7 +883,7 @@ phase1(argc, argv)
 	csflag = TRUE;
 	dsflag = FALSE; /* default state */
 	eof = EOF;
-	cdisk = 64000; /* high value for pointer - must declare to stop sign extenstion */
+	cdisk = 48000; /* high value for pointer - must declare to stop sign extenstion */
 	puts("\nPhase 1 - Loading object and library files");
 	if (lgo)
 		instr = JMP; /* load and go format */
@@ -904,8 +905,13 @@ phase1(argc, argv)
 				newfn(outfn, infn, LGOEXT); /* create cs, cr filenames from infn */
 			else
 				newfn(outfn, infn, COMEXT);
-			newfn(csfn, infn, OFLEXT);
-			newfn(crfn, infn, REFEXT); /*  $R  */
+
+			newfn(csfn, infn, OFLEXT);  /*  O$  */
+			newfn(crfn, infn, REFEXT); /*  R$  */
+			/* Delete if they already exist */
+			delete(csfn);
+			delete(crfn);
+
 			crfd = open(crfn, O_CREAT | O_RDWR | O_BINARY);
 		}
 
@@ -1257,7 +1263,7 @@ resolve() {
 
 		case PREL:
 			if (xr < cdisk) {
-				/* In the function load() we introduced the crletble offset to cater for the 16bit
+				/* In the function load() we introduced the creltble offset to cater for the 16bit
 				 * architecture.   Here we need to use it to obtain the correct offset.
 				 * Use xr to get the pointer to the creltble where the table is organised as
 				 * buffer offset (2 Bytes) - xr chain value(2 Bytes) - REL Type (1 Byte)
@@ -1387,7 +1393,7 @@ xrseek(byte)
 	int byte; {
 	/*	if (lseek(csfd, (byte >> 7) & 511, 0) == EOF) */
 	if (lseek(csfd, byte, SEEK_CUR) == EOF)
-		error2("- Seek Error in ", csfn);
+		error2("- Seek error in xr file ", csfn);
 }
 
 /*
@@ -1397,7 +1403,7 @@ dxrseek(byte)
 	int byte; {
 	/* if (lseek(dsfd, (byte >> 7) & 511, 0) == EOF) */
 	if (lseek(dsfd, byte, SEEK_CUR) == EOF)
-		error2("- Seek Error in ", dsfn);
+		error2("- Seek error in data file ", dsfn);
 }
 
 /*
