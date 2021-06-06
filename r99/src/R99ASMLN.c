@@ -1,8 +1,7 @@
 /*
- TMS9900/99105  Relocatable Cross-Assembler  v. 1.0
+ TMS9900/99105  Cross-Assembler  v. 1.0
 
- January, 1985 - Original version
- November, 2020 - Latest version
+ January, 1985
 
 
  Original 6800 version Copyright (c) 1980 William C. Colley, III.
@@ -11,7 +10,7 @@
 
 
 
- File:	r99asmln.c
+ File:	a99asmln.c
 
  Line assembly routine.
  */
@@ -101,7 +100,7 @@ void asmline() {
 					}
 				} else {
 					if (slookup(label)) {
-						markerr('P');
+						markerr('P');  /* Phasing Error */
 						label[0] = '\0';
 					} else {
 						if (sympoint->symflg & DUPBIT) markerr('D');
@@ -302,12 +301,12 @@ void _psop(unsigned short opcode, char *label) {
 		t = eval(START);
 		if (evalerr)
 			markerr('S');
-		pc += t;
+		nbytes = t;
 		hexflg = FLUSH;
 		progsize += t;
 		item = SETLC; /* alter the location counter */
 		type = PREL;
-		field = pc;
+		field = pc+nbytes;
 		putrel();
 		goto chkargs;
 
@@ -376,7 +375,7 @@ void _psop(unsigned short opcode, char *label) {
 			markerr('P');
 		goto chkargs;
 
-	case 11:
+	case 11:	/* EVEN */
 		if (pc & 1) { /* EVEN */
 			nbytes++;
 			item = ABS;
@@ -494,7 +493,7 @@ void _psop(unsigned short opcode, char *label) {
 		}
 		if (pass == 2) {
 			if (slookup(label)) {
-				markerr('P');
+				markerr('P2');
 				label[0] = '\0';
 			} else {
 				if (sympoint->symname[1] & 0x80)
@@ -525,7 +524,7 @@ void _psop(unsigned short opcode, char *label) {
 void _normop(unsigned short opcode, char attr)
 
 {
-	unsigned short regmask, regval, t, value, c, findex, i, j, fields[2];
+	unsigned short regmask, regval, t, value, c, findex, i, j, fields[3];
 	int short disp, operand, negindex;
 	unsigned char shift, parse, opdcount, attr1, attr2;
 	bptr = binbuf;
