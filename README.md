@@ -5,7 +5,7 @@ The relocating assembler uses identical syntax to the A99 assembler with the add
 
 The Relocating assemble using the standar Microsoft REL format with the exception that formated has been modified slightly (3 bits to 4 bits) to allow for variable names to be extened to 16 characters.  A very useful utility **DREL** allows you to dump the .R99, .LIB files to view the generated object files to help debug any external references etc.
 
-The Assembler is invokded using the following syntax
+The Assembler is invoked using the following syntax
 
 ***R99 fileName SCHCLC*** 
 1.   SC => Source File (.A99) will be found on drive C in the same directory as R99
