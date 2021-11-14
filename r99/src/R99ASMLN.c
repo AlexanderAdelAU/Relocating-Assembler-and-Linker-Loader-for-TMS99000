@@ -5,7 +5,7 @@
 
 
  Original 6800 version Copyright (c) 1980 William C. Colley, III.
- Modified for the TMS9900/99105  Series by Alexander Cameron.
+ Modified for the TMS9900/99105  Series and made relocatable by Alexander Cameron.
 
 
 
