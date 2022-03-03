@@ -1,7 +1,7 @@
 # Relocating-Assembler-and-Linker-Loader-for-TMS99000
 Stand alone Relocating Assembler and Linker that works with Small-C-Plus for the TMS99000 CPU.  The programmes have been built using the Eclipse IDE Version: 2020-03 (4.15.0) and the project files for both R99 and Link99 are included as zip files to allow easy building and execution.
 
-The relocating assembler uses identical syntax to the A99 assembler with the addtion of recognising the pseudo opcodes of ENT and EXT or Entry and External variable references.  Internal references can also be signalled using the syntax of "VariableName::" and external references using the syntax of "VariableName##"
+The relocating assembler uses identical syntax to the A99 assembler with the addition of recognising the pseudo opcodes of ENT and EXT or Entry and External variable references.  Internal references can also be signalled using the syntax of "VariableName::" and external references using the syntax of "VariableName##"
 
 The Relocating assemble using the standar Microsoft REL format with the exception that formated has been modified slightly (3 bits to 4 bits) to allow for variable names to be extened to 16 characters.  A very useful utility **DREL** allows you to dump the .R99, .LIB files to view the generated object files to help debug any external references etc.
 
