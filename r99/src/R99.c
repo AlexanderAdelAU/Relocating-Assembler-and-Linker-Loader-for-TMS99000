@@ -3,7 +3,8 @@
 
  May, 1980
 
- Copyright (c) 1980 William C. Colley, III.
+ Copyright (c) 1980 William C. Colley, III M6800 version
+ Alex Cameron, 1985 TMS9900 version
 
  File:	r99.c
 
