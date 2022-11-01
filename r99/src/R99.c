@@ -26,8 +26,7 @@ main(short int argc, char *argv[]) {
 	putls("\n---------------------------------------------");
 	putls("\nTMS9900 Relocatable Cross-Assembler  vers 1.0\n");
 	putls("Copyright (c) 1980  William C. Colley, III\n");
-	putls(
-			"(TMS 99105A version by Alexander. Cameron Jan 1984 and May 2015 )\n");
+	putls("(TMS 99105A version by Alexander.  May 2015 )\n");
 	putls("---------------------------------------------\n");
 	setfiles(argc, argv);
 
