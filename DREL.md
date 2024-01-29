@@ -1,6 +1,10 @@
 # Dumping and Viewing R99 Files using Reclocatable Object Library Dump Utility (DREL)
 
-### Example of the floating point package relocated able object file
+### An example of how to use the DREL applicaation.
+
+We provide an example of using the DREL utility to analyse the output of R99 relocatable assembler against the floating point package cfloatm48.a99.  The R99 file produced can be used by either the LIB99 to merge it with other library files, or just linked by the LINK99 application as a standalone object module.
+
+#### Run DREL using the following syntax:
 
 C:/ DREL.EXE cfloatm48.R99 will produce the following output:
 
