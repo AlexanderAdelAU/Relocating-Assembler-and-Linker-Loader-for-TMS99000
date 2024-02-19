@@ -64,16 +64,10 @@ short int hash(char *symbol) {
 	unsigned short j, tsymbr, tsymbl;
 	j = 0;
 	for (i = 0; i < (SYMLEN / 2); i++) {
-		//	tsymbl = (*symbol++ << 9);
-		//	tsymbr = (*symbol++ >> 1);
-		tsymbl = (*symbol++ << 7);
-		tsymbr = (*symbol++) << 1;
-		/* The above fixed  a problem with certain symbols not being found using
-		 j += (*symbol++ << 8) + (*symbol++);
-
-		 */
-		j += (tsymbl + tsymbr);
-
+	//Revised hash algorithm improves performance 20/2/2024
+		tsymbl = (*symbol++ << 8);
+		tsymbr = (*symbol++) >> 0;
+		j += (tsymbl ^ tsymbr);
 	}
 	return (j % SYMBOLS);
 }
