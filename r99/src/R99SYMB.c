@@ -58,8 +58,9 @@ short int slookup(char *symbol) {
  overflowed and the assembler wound up stuffing symbols into the  middle
  of the programme.  Assigning j to unsigned short solved this bug.
  */
+/* hash2 is not now used as if fails when a large number of symbols are needed */
 
-short int hash(char *symbol) {
+short int hash2(char *symbol) {
 	short int i;
 	unsigned short j, tsymbr, tsymbl;
 	j = 0;
@@ -71,6 +72,18 @@ short int hash(char *symbol) {
 	}
 	return (j % SYMBOLS);
 }
+
+short int hash( char *symbol) {
+    unsigned short hash = 0;
+    unsigned short magic_prime = 5381; // A common prime number used in hashing
+
+    for (int i = 0; i < SYMLEN; i++) {
+        hash = (hash * magic_prime) + symbol[i]; // Multiply hash by the prime
+        hash = (hash << 5) ^ hash;          // Then shift left and XOR
+    }
+    return hash % SYMBOLS;
+}
+
 
 /*
  Function to sort the symbol table.  The function
