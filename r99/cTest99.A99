@@ -1,1 +1,57 @@
 
+;* * *  Small-C/Plus Version 1.06a for the TMS 9900  * * *
+;       Cain, Van Zandt, Hendrix, Yorston, Cameron
+;          Original Z80 Version 21st April 1990       
+;
+R0	EQU 0
+R1	EQU 1
+R2	EQU 2
+R3	EQU 3
+R4	EQU 4
+R8	EQU 8
+SL	EQU 9
+SP	EQU 10
+WP	EQU 13
+R11	EQU 11
+	DXOP CALL,6
+	DXOP RET,7
+	DXOP PUSH,8
+	DXOP POP,9
+	DXOP WHEX,10
+	DXOP WRITE,12    ;WRITE CHAR IN MSB 
+	DXOP DEBUG,15    ;TRACE THE PRECEDING INSTRUCTION, PC,ST and REGISTERS 
+
+;-------- START MODULE -----------
+	STWP WP 
+;	B @_main## ; This calls iolib99 entry point
+;// #include "float.h"
+;char ch;
+ch:	BSS 1
+;main ()  {
+	EVEN
+main:
+;modstk(newsp,save)
+;	  int  aa;
+;	  char bb;
+;	 int c;
+;	 char ddd;
+;	 unsigned int a;
+;	 char b;
+;	 int fd;
+;	 ch = 3;
+;modstk(newsp,save)
+	MOVB @2*R4+1(WP),@ch
+	END
+
+	EXT getc
+	ENT main
+	EXT putc
+	EXT puts
+	EXT fopen
+	ENT ch
+	EXT fclose
+	EXT printf
+	EVEN
+	END
+
+; --- End of Compilation ---
