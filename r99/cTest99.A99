@@ -1,57 +1,2659 @@
+                        ;* * *  Small-C/Plus Version 1.06a for the TMS 9900 - Cameron * * *
+                        ;       Cain, Van Zandt, Hendrix, Yorston, Cameron
+                        ;          Original Z80 Version 21st April 1990       
+                        ;
+  0000                  R0	EQU 0
+  0001                  R1	EQU 1
+  0002                  R2	EQU 2
+  0003                  R3	EQU 3
+  0004                  R4	EQU 4
+  0008                  R8	EQU 8
+  0009                  SL	EQU 9
+  000A                  SP	EQU 10
+  000D                  WP	EQU 13
+  000B                  R11	EQU 11
+                        	DXOP CALL,6
+                        	DXOP RET,7
+                        	DXOP PUSH,8
+                        	DXOP POP,9
+                        	DXOP WHEX,10
+                        	DXOP WRITE,12    ;WRITE CHAR IN MSB 
+                        	DXOP DEBUG,15    ;TRACE THE PRECEDING INSTRUCTION, PC,ST and REGISTERS 
+                        
+                        ;-------- START MODULE -----------
+  0000   02AD           	STWP WP 
+  0002   0460 0000      	B @_main## ; This calls iolib99 entry point
+                        ;#include "stdio.h"
+                        ;/*
+                        ;** STDIO.H -- Standard Small-C Definitions
+                        ;**
+                        ;** Copyright 1984  L. E. Payne and J. E. Hendrix
+                        ;*/
+                        ;#define stdin    0
+                        ;#define stdout   1
+                        ;#define stderr   2
+                        ;#define	ERR		(-2)
+                        ;#define EOF		(-1)
+                        ;#define YES      1
+                        ;#define NO       0
+                        ;#define NULL     0
+                        ;#define CR      0x0D /* '\r' */
+                        ;#define LF      0x0A /* '\n' */
+                        ;#define BELL     7
+                        ;#define SPACE  ' '
+                        ;#define NEWLINE LF      /*23*/ /*45*/
+                        ;#define FILE char
+                        ;/* Flags for the iobuf structure  */
+                        ;#define	_IOREAD	1 /* currently reading */
+                        ;#define	_IOWRT	2 /* currently writing */
+                        ;#define	_IORW	0x0080 /* opened as "r+w" */
+                        ;/* Flags for lseek and fseek */
+                        ;#define SEEK_SET  0
+                        ;#define SEEK_CUR  1
+                        ;#define SEEK_END  2
+                        ;#include "float.h"
+                        ;/*
+                        ; * Floating Point declarations to ensure the Small C compiler generates the correct
+                        ; * handling for the return variables
+                        ; *
+                        ; */
+                        ;extern double floor();
+                        ;extern double float();
+                        ;extern int ifix();
+                        ;extern double sin();
+                        ;extern double cos();
+                        ;extern double tan();
+                        ;extern double pow();
+                        ;extern double fabs();
+                        ;extern double log();
+                        ;extern double log10();
+                        ;extern double exp();
+                        ;extern double fmod();
+                        ;extern double sqrt();
+                        ;extern double atan();
+                        ;int i,j,k;
+  0006                  	EVEN
+  0006   1000           q_i:	BSS 2
+  0008                  	EVEN
+  0008   1000           q_j:	BSS 2
+  000A                  	EVEN
+  000A   1000           q_k:	BSS 2
+                        ;char l,m,n;
+  000C   10             q_l:	BSS 1
+  000D   10             q_m:	BSS 1
+  000E   10             q_n:	BSS 1
+                        ;int ftoa2();
+                        ;main (argc,argv) int argc; char *argv[]; {
+  000F   00             	EVEN
+                        main:
+                        ;modstk(newsp,save)
+                        ;	int i;
+                        ;	int fd;
+                        ;	double dd;
+                        ;	char ch;
+                        ;	char str[64];
+                        ;	double z;
+                        ;	double y;
+                        ;	char *ui;
+                        ;	char *uj;
+                        ;	double st;
+                        ;	double pi;
+                        ;    // Run test cases
+                        ;	testArith();
+                        ;modstk(newsp,save)
+  0010   022A FF98      	AI SP,-104
+                        ;zcall()
+  0014   2DA0 0A98      	CALL @testArith
+                        ;modstk(newsp,save)
+                        ;	testControl();
+                        ;zcall()
+  0018   2DA0 0B1C      	CALL @testControl
+                        ;modstk(newsp,save)
+                        ;	add();
+                        ;zcall()
+  001C   2DA0 0CCA      	CALL @add
+                        ;modstk(newsp,save)
+                        ;	testFunc();
+                        ;zcall()
+  0020   2DA0 0CE4      	CALL @testFunc
+                        ;modstk(newsp,save)
+                        ;	testArrays();
+                        ;zcall()
+  0024   2DA0 0BBE      	CALL @testArrays
+                        ;modstk(newsp,save)
+                        ;	testPointer();
+                        ;zcall()
+  0028   2DA0 0D44      	CALL @testPointer
+                        ;modstk(newsp,save)
+                        ;	testMemAll();
+                        ;zcall()
+  002C   2DA0 0DB2      	CALL @testMemAll
+                        ;modstk(newsp,save)
+                        ;	testLogical();
+                        ;zcall()
+  0030   2DA0 0E22      	CALL @testLogical
+                        ;modstk(newsp,save)
+                        ;	return;
+                        ;modstk(newsp,save)
+  0034   022A 0068      	AI SP,104
+  0038   2DC0           	RET
+                        ;	st = 1.0;
+                        ;getloc(sym, off)
+  003A   0204 0006      	LI  R4,6
+  003E   A10A           	A  SP,R4
+                        ;zpush()
+  0040   064A           	DECT SP
+  0042   C684           	MOV R4,*SP
+                        ;constant(lval)
+  0044   0204 04CE      	LI R4,cc1+0
+                        ;fpcall()
+  0048   2DA0 0000      	CALL @_fload##
+                        ;mainpop()
+  004C   C13A           	MOV *SP+,R4
+                        ;fpcall()
+  004E   2DA0 0000      	CALL @_fstore##
+                        ;	pi = 3.1461234;
+                        ;getloc(sym, off)
+  0052   C10A           	MOV SP,R4
+                        ;zpush()
+  0054   064A           	DECT SP
+  0056   C684           	MOV R4,*SP
+                        ;constant(lval)
+  0058   0204 04D4      	LI R4,cc1+6
+                        ;fpcall()
+  005C   2DA0 004A      	CALL @_fload##
+                        ;mainpop()
+  0060   C13A           	MOV *SP+,R4
+                        ;fpcall()
+  0062   2DA0 0050      	CALL @_fstore##
+                        ;	fd = 2;
+                        ;getloc(sym, off)
+  0066   0204 0064      	LI  R4,100
+  006A   A10A           	A  SP,R4
+                        ;zpush()
+  006C   064A           	DECT SP
+  006E   C684           	MOV R4,*SP
+                        ;const1(val)
+  0070   0204 0002      	LI R4,2
+                        ;zpop()
+  0074   C0FA           	MOV *SP+,R3
+                        ;putstk - int
+  0076   C4C4           	MOV R4,*R3
+                        ;	for (i=0; i <= 20; i += 1){
+                        ;getloc(sym, off)
+  0078   0204 0066      	LI  R4,102
+  007C   A10A           	A  SP,R4
+                        ;zpush()
+  007E   064A           	DECT SP
+  0080   C684           	MOV R4,*SP
+                        ;const1(val)
+  0082   04C4           	CLR R4
+                        ;zpop()
+  0084   C0FA           	MOV *SP+,R3
+                        ;putstk - int
+  0086   C4C4           	MOV R4,*R3
+                        cc4:
+                        ;getloc(sym, off)
+  0088   0204 0066      	LI  R4,102
+  008C   A10A           	A  SP,R4
+                        ;indirect ccgint
+  008E   C114           	MOV *R4,R4
+                        ;zpush()
+  0090   064A           	DECT SP
+  0092   C684           	MOV R4,*SP
+                        ;const1(val)
+  0094   0204 0014      	LI R4,20
+                        ;zpop()
+  0098   C0FA           	MOV *SP+,R3
+                        ;_ccle
+  009A   80C4           	C R4,R3
+  009C   1303           	JEQ $+8
+  009E   1502           	JGT $+6
+  00A0   0460 012C      	B @cc3
+                        ;jump(label)
+  00A4   0460 00BE      	B  @cc5
+                        cc2:
+                        ;getloc(sym, off)
+  00A8   0204 0066      	LI  R4,102
+  00AC   A10A           	A  SP,R4
+                        ;zpush()
+  00AE   064A           	DECT SP
+  00B0   C684           	MOV R4,*SP
+                        ;indirect ccgint
+  00B2   C114           	MOV *R4,R4
+                        ;inc()
+  00B4   0584           	INC R4
+                        ;zpop()
+  00B6   C0FA           	MOV *SP+,R3
+                        ;putstk - int
+  00B8   C4C4           	MOV R4,*R3
+                        ;jump(label)
+  00BA   0460 0088      	B  @cc4
+                        cc5:
+                        ;		dd = i * pi;
+                        ;modstk(newsp,save)
+                        ;getloc(sym, off)
+  00BE   0204 005E      	LI  R4,94
+  00C2   A10A           	A  SP,R4
+                        ;zpush()
+  00C4   064A           	DECT SP
+  00C6   C684           	MOV R4,*SP
+                        ;getloc(sym, off)
+  00C8   0204 0068      	LI  R4,104
+  00CC   A10A           	A  SP,R4
+                        ;indirect ccgint
+  00CE   C114           	MOV *R4,R4
+                        ;zpush()
+  00D0   064A           	DECT SP
+  00D2   C684           	MOV R4,*SP
+                        ;getloc(sym, off)
+  00D4   0204 0004      	LI  R4,4
+  00D8   A10A           	A  SP,R4
+                        ;indirect float
+                        ;fpcall()
+  00DA   2DA0 005E      	CALL @_fload##
+                        ;fpush2()
+                        ;fpcall()
+  00DE   2DA0 0000      	CALL @_fpush2##
+                        ;mainpop()
+  00E2   C13A           	MOV *SP+,R4
+                        ;fpcall()
+  00E4   2DA0 0000      	CALL @_float##
+                        ;fpcall()
+  00E8   2DA0 0000      	CALL @_fpswap##
+                        ;fpcall()
+  00EC   2DA0 0000      	CALL @_fpmul##
+                        ;mainpop()
+  00F0   C13A           	MOV *SP+,R4
+                        ;fpcall()
+  00F2   2DA0 0064      	CALL @_fstore##
+                        ;		printf("\n%i%20.10f - ",i, dd);
+                        ;constant(lval)
+  00F6   0204 04DA      	LI R4,cc1+12
+                        ;zpush()
+  00FA   064A           	DECT SP
+  00FC   C684           	MOV R4,*SP
+                        ;getloc(sym, off)
+  00FE   0204 0068      	LI  R4,104
+  0102   A10A           	A  SP,R4
+                        ;indirect ccgint
+  0104   C114           	MOV *R4,R4
+                        ;zpush()
+  0106   064A           	DECT SP
+  0108   C684           	MOV R4,*SP
+                        ;getloc(sym, off)
+  010A   0204 0062      	LI  R4,98
+  010E   A10A           	A  SP,R4
+                        ;indirect float
+                        ;fpcall()
+  0110   2DA0 00DC      	CALL @_fload##
+                        ;fpush()
+                        ;fpcall()
+  0114   2DA0 0000      	CALL @_fpush##
+                        ;loadarg(n)
+  0118   0201 0005      	LI R1,5
+  011C   06A0 0000      	BL @_setargc##
+                        ;zcall()
+  0120   2DA0 0000      	CALL @printf
+                        ;modstk(newsp,save)
+  0124   022A 000A      	AI SP,10
+                        ;	}
+                        ;modstk(newsp,save)
+                        ;jump(label)
+  0128   0460 00A8      	B  @cc2
+                        cc3:
+                        ;	printf("\nStarting Test..\n");
+                        ;constant(lval)
+  012C   0204 04E8      	LI R4,cc1+26
+                        ;zpush()
+  0130   064A           	DECT SP
+  0132   C684           	MOV R4,*SP
+                        ;loadarg(n)
+  0134   0201 0001      	LI R1,1
+  0138   06A0 011E      	BL @_setargc##
+                        ;zcall()
+  013C   2DA0 0122      	CALL @printf
+                        ;modstk(newsp,save)
+  0140   05CA           	INCT SP
+                        ;	dd = 1.2345;
+                        ;getloc(sym, off)
+  0142   0204 005E      	LI  R4,94
+  0146   A10A           	A  SP,R4
+                        ;zpush()
+  0148   064A           	DECT SP
+  014A   C684           	MOV R4,*SP
+                        ;constant(lval)
+  014C   0204 04FA      	LI R4,cc1+44
+                        ;fpcall()
+  0150   2DA0 0112      	CALL @_fload##
+                        ;mainpop()
+  0154   C13A           	MOV *SP+,R4
+                        ;fpcall()
+  0156   2DA0 00F4      	CALL @_fstore##
+                        ;	dd = dd+2.0;
+                        ;getloc(sym, off)
+  015A   0204 005E      	LI  R4,94
+  015E   A10A           	A  SP,R4
+                        ;zpush()
+  0160   064A           	DECT SP
+  0162   C684           	MOV R4,*SP
+                        ;getloc(sym, off)
+  0164   0204 0060      	LI  R4,96
+  0168   A10A           	A  SP,R4
+                        ;indirect float
+                        ;fpcall()
+  016A   2DA0 0152      	CALL @_fload##
+                        ;fpush()
+                        ;fpcall()
+  016E   2DA0 0116      	CALL @_fpush##
+                        ;constant(lval)
+  0172   0204 0500      	LI R4,cc1+50
+                        ;fpcall()
+  0176   2DA0 016C      	CALL @_fload##
+                        ;fpcall()
+  017A   2DA0 0000      	CALL @_fpadd##
+                        ;mainpop()
+  017E   C13A           	MOV *SP+,R4
+                        ;fpcall()
+  0180   2DA0 0158      	CALL @_fstore##
+                        ;	ftoa2(dd,5,str);
+                        ;getloc(sym, off)
+  0184   0204 005E      	LI  R4,94
+  0188   A10A           	A  SP,R4
+                        ;indirect float
+                        ;fpcall()
+  018A   2DA0 0178      	CALL @_fload##
+                        ;fpush()
+                        ;fpcall()
+  018E   2DA0 0170      	CALL @_fpush##
+                        ;const1(val)
+  0192   0204 0005      	LI R4,5
+                        ;zpush()
+  0196   064A           	DECT SP
+  0198   C684           	MOV R4,*SP
+                        ;getloc(sym, off)
+                        ;Char offset
+  019A   0204 0025      	LI  R4,37
+  019E   A10A           	A  SP,R4
+                        ;zpush()
+  01A0   064A           	DECT SP
+  01A2   C684           	MOV R4,*SP
+                        ;zcall()
+  01A4   2DA0 05EE      	CALL @ftoa2
+                        ;modstk(newsp,save)
+  01A8   022A 000A      	AI SP,10
+                        ;	puts(str);
+                        ;getloc(sym, off)
+                        ;Char offset
+  01AC   0204 001D      	LI  R4,29
+  01B0   A10A           	A  SP,R4
+                        ;zpush()
+  01B2   064A           	DECT SP
+  01B4   C684           	MOV R4,*SP
+                        ;zcall()
+  01B6   2DA0 0000      	CALL @puts
+                        ;modstk(newsp,save)
+  01BA   05CA           	INCT SP
+                        ;	for (i=0; i <= 360; i += 10){
+                        ;getloc(sym, off)
+  01BC   0204 0066      	LI  R4,102
+  01C0   A10A           	A  SP,R4
+                        ;zpush()
+  01C2   064A           	DECT SP
+  01C4   C684           	MOV R4,*SP
+                        ;const1(val)
+  01C6   04C4           	CLR R4
+                        ;zpop()
+  01C8   C0FA           	MOV *SP+,R3
+                        ;putstk - int
+  01CA   C4C4           	MOV R4,*R3
+                        cc8:
+                        ;getloc(sym, off)
+  01CC   0204 0066      	LI  R4,102
+  01D0   A10A           	A  SP,R4
+                        ;indirect ccgint
+  01D2   C114           	MOV *R4,R4
+                        ;zpush()
+  01D4   064A           	DECT SP
+  01D6   C684           	MOV R4,*SP
+                        ;const1(val)
+  01D8   0204 0168      	LI R4,360
+                        ;zpop()
+  01DC   C0FA           	MOV *SP+,R3
+                        ;_ccle
+  01DE   80C4           	C R4,R3
+  01E0   1303           	JEQ $+8
+  01E2   1502           	JGT $+6
+  01E4   0460 027E      	B @cc7
+                        ;jump(label)
+  01E8   0460 0206      	B  @cc9
+                        cc6:
+                        ;getloc(sym, off)
+  01EC   0204 0066      	LI  R4,102
+  01F0   A10A           	A  SP,R4
+                        ;zpush()
+  01F2   064A           	DECT SP
+  01F4   C684           	MOV R4,*SP
+                        ;indirect ccgint
+  01F6   C114           	MOV *R4,R4
+                        ;const2(val)
+  01F8   0203 000A      	LI R3,10
+                        ;	zadd()
+  01FC   A103           	A R3,R4
+                        ;zpop()
+  01FE   C0FA           	MOV *SP+,R3
+                        ;putstk - int
+  0200   C4C4           	MOV R4,*R3
+                        ;jump(label)
+  0202   0460 01CC      	B  @cc8
+                        cc9:
+                        ;		dd = sin(float(i)*3.141592654/180.0);
+                        ;modstk(newsp,save)
+                        ;getloc(sym, off)
+  0206   0204 005E      	LI  R4,94
+  020A   A10A           	A  SP,R4
+                        ;zpush()
+  020C   064A           	DECT SP
+  020E   C684           	MOV R4,*SP
+                        ;getloc(sym, off)
+  0210   0204 0068      	LI  R4,104
+  0214   A10A           	A  SP,R4
+                        ;indirect ccgint
+  0216   C114           	MOV *R4,R4
+                        ;zpush()
+  0218   064A           	DECT SP
+  021A   C684           	MOV R4,*SP
+                        ;zcall()
+  021C   2DA0 0000      	CALL @float
+                        ;modstk(newsp,save)
+  0220   05CA           	INCT SP
+                        ;fpush()
+                        ;fpcall()
+  0222   2DA0 0190      	CALL @_fpush##
+                        ;constant(lval)
+  0226   0204 0506      	LI R4,cc1+56
+                        ;fpcall()
+  022A   2DA0 018C      	CALL @_fload##
+                        ;fpcall()
+  022E   2DA0 00EE      	CALL @_fpmul##
+                        ;fpush()
+                        ;fpcall()
+  0232   2DA0 0224      	CALL @_fpush##
+                        ;constant(lval)
+  0236   0204 050C      	LI R4,cc1+62
+                        ;fpcall()
+  023A   2DA0 022C      	CALL @_fload##
+                        ;fpcall()
+  023E   2DA0 0000      	CALL @_fpdiv##
+                        ;fpush()
+                        ;fpcall()
+  0242   2DA0 0234      	CALL @_fpush##
+                        ;zcall()
+  0246   2DA0 0000      	CALL @sin
+                        ;modstk(newsp,save)
+  024A   022A 0006      	AI SP,6
+                        ;mainpop()
+  024E   C13A           	MOV *SP+,R4
+                        ;fpcall()
+  0250   2DA0 0182      	CALL @_fstore##
+                        ;		printf("\n%20.10f - ",dd);
+                        ;constant(lval)
+  0254   0204 0512      	LI R4,cc1+68
+                        ;zpush()
+  0258   064A           	DECT SP
+  025A   C684           	MOV R4,*SP
+                        ;getloc(sym, off)
+  025C   0204 0060      	LI  R4,96
+  0260   A10A           	A  SP,R4
+                        ;indirect float
+                        ;fpcall()
+  0262   2DA0 023C      	CALL @_fload##
+                        ;fpush()
+                        ;fpcall()
+  0266   2DA0 0244      	CALL @_fpush##
+                        ;loadarg(n)
+  026A   0201 0004      	LI R1,4
+  026E   06A0 013A      	BL @_setargc##
+                        ;zcall()
+  0272   2DA0 013E      	CALL @printf
+                        ;modstk(newsp,save)
+  0276   022A 0008      	AI SP,8
+                        ;		//fp2string(dd);
+                        ;	}
+                        ;modstk(newsp,save)
+                        ;jump(label)
+  027A   0460 01EC      	B  @cc6
+                        cc7:
+                        ;	printf("\n Testing disc i/o");
+                        ;constant(lval)
+  027E   0204 051E      	LI R4,cc1+80
+                        ;zpush()
+  0282   064A           	DECT SP
+  0284   C684           	MOV R4,*SP
+                        ;loadarg(n)
+  0286   0201 0001      	LI R1,1
+  028A   06A0 0270      	BL @_setargc##
+                        ;zcall()
+  028E   2DA0 0274      	CALL @printf
+                        ;modstk(newsp,save)
+  0292   05CA           	INCT SP
+                        ;    printf("\nOutput argc for main = %d\n",argc);
+                        ;constant(lval)
+  0294   0204 0531      	LI R4,cc1+99
+                        ;zpush()
+  0298   064A           	DECT SP
+  029A   C684           	MOV R4,*SP
+                        ;getloc(sym, off)
+  029C   0204 006E      	LI  R4,110
+  02A0   A10A           	A  SP,R4
+                        ;indirect ccgint
+  02A2   C114           	MOV *R4,R4
+                        ;zpush()
+  02A4   064A           	DECT SP
+  02A6   C684           	MOV R4,*SP
+                        ;loadarg(n)
+  02A8   0201 0002      	LI R1,2
+  02AC   06A0 028C      	BL @_setargc##
+                        ;zcall()
+  02B0   2DA0 0290      	CALL @printf
+                        ;modstk(newsp,save)
+  02B4   022A 0004      	AI SP,4
+                        ;	for(i=1;i< argc;i++)
+                        ;getloc(sym, off)
+  02B8   0204 0066      	LI  R4,102
+  02BC   A10A           	A  SP,R4
+                        ;zpush()
+  02BE   064A           	DECT SP
+  02C0   C684           	MOV R4,*SP
+                        ;const1(val)
+  02C2   0204 0001      	LI R4,1
+                        ;zpop()
+  02C6   C0FA           	MOV *SP+,R3
+                        ;putstk - int
+  02C8   C4C4           	MOV R4,*R3
+                        cc12:
+                        ;getloc(sym, off)
+  02CA   0204 0066      	LI  R4,102
+  02CE   A10A           	A  SP,R4
+                        ;indirect ccgint
+  02D0   C114           	MOV *R4,R4
+                        ;zpush()
+  02D2   064A           	DECT SP
+  02D4   C684           	MOV R4,*SP
+                        ;getloc(sym, off)
+  02D6   0204 006E      	LI  R4,110
+  02DA   A10A           	A  SP,R4
+                        ;indirect ccgint
+  02DC   C114           	MOV *R4,R4
+                        ;zpop()
+  02DE   C0FA           	MOV *SP+,R3
+                        ;_cclt
+  02E0   8103           	C R3,R4
+  02E2   1102           	JLT $+6
+  02E4   0460 0370      	B @cc11
+                        ;jump(label)
+  02E8   0460 0304      	B  @cc13
+                        cc10:
+                        ;getloc(sym, off)
+  02EC   0204 0066      	LI  R4,102
+  02F0   A10A           	A  SP,R4
+                        ;zpush()
+  02F2   064A           	DECT SP
+  02F4   C684           	MOV R4,*SP
+                        ;indirect ccgint
+  02F6   C114           	MOV *R4,R4
+                        ;inc()
+  02F8   0584           	INC R4
+                        ;zpop()
+  02FA   C0FA           	MOV *SP+,R3
+                        ;putstk - int
+  02FC   C4C4           	MOV R4,*R3
+                        ;	dec()
+  02FE   0604           	DEC R4
+                        ;jump(label)
+  0300   0460 02CA      	B  @cc12
+                        cc13:
+                        ;	{
+                        ;		printf("%s%c",argv[i],(i<argc-1) ? ' ' : '\n');
+                        ;modstk(newsp,save)
+                        ;constant(lval)
+  0304   0204 054D      	LI R4,cc1+127
+                        ;zpush()
+  0308   064A           	DECT SP
+  030A   C684           	MOV R4,*SP
+                        ;getloc(sym, off)
+  030C   0204 006C      	LI  R4,108
+  0310   A10A           	A  SP,R4
+                        ;indirect ccgint
+  0312   C114           	MOV *R4,R4
+                        ;zpush()
+  0314   064A           	DECT SP
+  0316   C684           	MOV R4,*SP
+                        ;getloc(sym, off)
+  0318   0204 006A      	LI  R4,106
+  031C   A10A           	A  SP,R4
+                        ;indirect ccgint
+  031E   C114           	MOV *R4,R4
+                        ;scale(type,tag)
+                        ;	doublereg()
+  0320   A104           	A R4,R4
+                        ;zpop()
+  0322   C0FA           	MOV *SP+,R3
+                        ;	zadd()
+  0324   A103           	A R3,R4
+                        ;indirect ccgint
+  0326   C114           	MOV *R4,R4
+                        ;zpush()
+  0328   064A           	DECT SP
+  032A   C684           	MOV R4,*SP
+                        ;getloc(sym, off)
+  032C   0204 006A      	LI  R4,106
+  0330   A10A           	A  SP,R4
+                        ;indirect ccgint
+  0332   C114           	MOV *R4,R4
+                        ;zpush()
+  0334   064A           	DECT SP
+  0336   C684           	MOV R4,*SP
+                        ;getloc(sym, off)
+  0338   0204 0072      	LI  R4,114
+  033C   A10A           	A  SP,R4
+                        ;indirect ccgint
+  033E   C114           	MOV *R4,R4
+                        ;	dec()
+  0340   0604           	DEC R4
+                        ;zpop()
+  0342   C0FA           	MOV *SP+,R3
+                        ;_cclt
+  0344   8103           	C R3,R4
+  0346   1102           	JLT $+6
+  0348   0460 0354      	B @cc14
+                        ;const1(val)
+  034C   0204 0020      	LI R4,32
+                        ;jump(label)
+  0350   0460 0358      	B  @cc15
+                        cc14:
+                        ;const1(val)
+  0354   0204 000D      	LI R4,13
+                        cc15:
+                        ;zpush()
+  0358   064A           	DECT SP
+  035A   C684           	MOV R4,*SP
+                        ;loadarg(n)
+  035C   0201 0003      	LI R1,3
+  0360   06A0 02AE      	BL @_setargc##
+                        ;zcall()
+  0364   2DA0 02B2      	CALL @printf
+                        ;modstk(newsp,save)
+  0368   022A 0006      	AI SP,6
+                        ;	}
+                        ;modstk(newsp,save)
+                        ;jump(label)
+  036C   0460 02EC      	B  @cc10
+                        cc11:
+                        ;	fd = fopen("test1","w");
+                        ;getloc(sym, off)
+  0370   0204 0064      	LI  R4,100
+  0374   A10A           	A  SP,R4
+                        ;zpush()
+  0376   064A           	DECT SP
+  0378   C684           	MOV R4,*SP
+                        ;constant(lval)
+  037A   0204 0552      	LI R4,cc1+132
+                        ;zpush()
+  037E   064A           	DECT SP
+  0380   C684           	MOV R4,*SP
+                        ;constant(lval)
+  0382   0204 0558      	LI R4,cc1+138
+                        ;zpush()
+  0386   064A           	DECT SP
+  0388   C684           	MOV R4,*SP
+                        ;zcall()
+  038A   2DA0 0000      	CALL @fopen
+                        ;modstk(newsp,save)
+  038E   022A 0004      	AI SP,4
+                        ;zpop()
+  0392   C0FA           	MOV *SP+,R3
+                        ;putstk - int
+  0394   C4C4           	MOV R4,*R3
+                        ;	printf ("Create new file test1 for writing fd = %d\n",fd);
+                        ;constant(lval)
+  0396   0204 055A      	LI R4,cc1+140
+                        ;zpush()
+  039A   064A           	DECT SP
+  039C   C684           	MOV R4,*SP
+                        ;getloc(sym, off)
+  039E   0204 0066      	LI  R4,102
+  03A2   A10A           	A  SP,R4
+                        ;indirect ccgint
+  03A4   C114           	MOV *R4,R4
+                        ;zpush()
+  03A6   064A           	DECT SP
+  03A8   C684           	MOV R4,*SP
+                        ;loadarg(n)
+  03AA   0201 0002      	LI R1,2
+  03AE   06A0 0362      	BL @_setargc##
+                        ;zcall()
+  03B2   2DA0 0366      	CALL @printf
+                        ;modstk(newsp,save)
+  03B6   022A 0004      	AI SP,4
+                        ;	ch = putc('T',fd);
+                        ;getloc(sym, off)
+                        ;Char offset
+  03BA   0204 005D      	LI  R4,93
+  03BE   A10A           	A  SP,R4
+                        ;zpush()
+  03C0   064A           	DECT SP
+  03C2   C684           	MOV R4,*SP
+                        ;const1(val)
+  03C4   0204 0054      	LI R4,84
+                        ;zpush()
+  03C8   064A           	DECT SP
+  03CA   C684           	MOV R4,*SP
+                        ;getloc(sym, off)
+  03CC   0204 0068      	LI  R4,104
+  03D0   A10A           	A  SP,R4
+                        ;indirect ccgint
+  03D2   C114           	MOV *R4,R4
+                        ;zpush()
+  03D4   064A           	DECT SP
+  03D6   C684           	MOV R4,*SP
+                        ;zcall()
+  03D8   2DA0 0000      	CALL @putc
+                        ;modstk(newsp,save)
+  03DC   022A 0004      	AI SP,4
+                        ;zpop()
+  03E0   C0FA           	MOV *SP+,R3
+                        ;putstk - char
+  03E2   D4ED 0009      	MOVB @2*R4+1(WP),*R3
+                        ;	printf("One character written...\n");
+                        ;constant(lval)
+  03E6   0204 0585      	LI R4,cc1+183
+                        ;zpush()
+  03EA   064A           	DECT SP
+  03EC   C684           	MOV R4,*SP
+                        ;loadarg(n)
+  03EE   0201 0001      	LI R1,1
+  03F2   06A0 03B0      	BL @_setargc##
+                        ;zcall()
+  03F6   2DA0 03B4      	CALL @printf
+                        ;modstk(newsp,save)
+  03FA   05CA           	INCT SP
+                        ;	fclose(fd);
+                        ;getloc(sym, off)
+  03FC   0204 0064      	LI  R4,100
+  0400   A10A           	A  SP,R4
+                        ;indirect ccgint
+  0402   C114           	MOV *R4,R4
+                        ;zpush()
+  0404   064A           	DECT SP
+  0406   C684           	MOV R4,*SP
+                        ;zcall()
+  0408   2DA0 0000      	CALL @fclose
+                        ;modstk(newsp,save)
+  040C   05CA           	INCT SP
+                        ;	fd = fopen("test1","r");
+                        ;getloc(sym, off)
+  040E   0204 0064      	LI  R4,100
+  0412   A10A           	A  SP,R4
+                        ;zpush()
+  0414   064A           	DECT SP
+  0416   C684           	MOV R4,*SP
+                        ;constant(lval)
+  0418   0204 059F      	LI R4,cc1+209
+                        ;zpush()
+  041C   064A           	DECT SP
+  041E   C684           	MOV R4,*SP
+                        ;constant(lval)
+  0420   0204 05A5      	LI R4,cc1+215
+                        ;zpush()
+  0424   064A           	DECT SP
+  0426   C684           	MOV R4,*SP
+                        ;zcall()
+  0428   2DA0 038C      	CALL @fopen
+                        ;modstk(newsp,save)
+  042C   022A 0004      	AI SP,4
+                        ;zpop()
+  0430   C0FA           	MOV *SP+,R3
+                        ;putstk - int
+  0432   C4C4           	MOV R4,*R3
+                        ;	printf ("Open file test1 for reading fd = %d\n",fd);
+                        ;constant(lval)
+  0434   0204 05A7      	LI R4,cc1+217
+                        ;zpush()
+  0438   064A           	DECT SP
+  043A   C684           	MOV R4,*SP
+                        ;getloc(sym, off)
+  043C   0204 0066      	LI  R4,102
+  0440   A10A           	A  SP,R4
+                        ;indirect ccgint
+  0442   C114           	MOV *R4,R4
+                        ;zpush()
+  0444   064A           	DECT SP
+  0446   C684           	MOV R4,*SP
+                        ;loadarg(n)
+  0448   0201 0002      	LI R1,2
+  044C   06A0 03F4      	BL @_setargc##
+                        ;zcall()
+  0450   2DA0 03F8      	CALL @printf
+                        ;modstk(newsp,save)
+  0454   022A 0004      	AI SP,4
+                        ;	ch = getc(fd);
+                        ;getloc(sym, off)
+                        ;Char offset
+  0458   0204 005D      	LI  R4,93
+  045C   A10A           	A  SP,R4
+                        ;zpush()
+  045E   064A           	DECT SP
+  0460   C684           	MOV R4,*SP
+                        ;getloc(sym, off)
+  0462   0204 0066      	LI  R4,102
+  0466   A10A           	A  SP,R4
+                        ;indirect ccgint
+  0468   C114           	MOV *R4,R4
+                        ;zpush()
+  046A   064A           	DECT SP
+  046C   C684           	MOV R4,*SP
+                        ;zcall()
+  046E   2DA0 0000      	CALL @getc
+                        ;modstk(newsp,save)
+  0472   05CA           	INCT SP
+                        ;zpop()
+  0474   C0FA           	MOV *SP+,R3
+                        ;putstk - char
+  0476   D4ED 0009      	MOVB @2*R4+1(WP),*R3
+                        ;	printf ("Output char  = %c\n",ch);
+                        ;constant(lval)
+  047A   0204 05CC      	LI R4,cc1+254
+                        ;zpush()
+  047E   064A           	DECT SP
+  0480   C684           	MOV R4,*SP
+                        ;getloc(sym, off)
+                        ;Char offset
+  0482   0204 005F      	LI  R4,95
+  0486   A10A           	A  SP,R4
+                        ;indirect ccgchar
+  0488   D114           	MOVB *R4,R4
+  048A   0884           	SRA R4,8
+                        ;zpush()
+  048C   064A           	DECT SP
+  048E   C684           	MOV R4,*SP
+                        ;loadarg(n)
+  0490   0201 0002      	LI R1,2
+  0494   06A0 044E      	BL @_setargc##
+                        ;zcall()
+  0498   2DA0 0452      	CALL @printf
+                        ;modstk(newsp,save)
+  049C   022A 0004      	AI SP,4
+                        ;	fclose(fd);
+                        ;getloc(sym, off)
+  04A0   0204 0064      	LI  R4,100
+  04A4   A10A           	A  SP,R4
+                        ;indirect ccgint
+  04A6   C114           	MOV *R4,R4
+                        ;zpush()
+  04A8   064A           	DECT SP
+  04AA   C684           	MOV R4,*SP
+                        ;zcall()
+  04AC   2DA0 040A      	CALL @fclose
+                        ;modstk(newsp,save)
+  04B0   05CA           	INCT SP
+                        ;	printf("\nEnd of Test\n");
+                        ;constant(lval)
+  04B2   0204 05DF      	LI R4,cc1+273
+                        ;zpush()
+  04B6   064A           	DECT SP
+  04B8   C684           	MOV R4,*SP
+                        ;loadarg(n)
+  04BA   0201 0001      	LI R1,1
+  04BE   06A0 0496      	BL @_setargc##
+                        ;zcall()
+  04C2   2DA0 049A      	CALL @printf
+                        ;modstk(newsp,save)
+  04C6   05CA           	INCT SP
+                        ;}
+                        ;modstk(newsp,save)
+  04C8   022A 0068      	AI SP,104
+                        ;modstk(newsp,save)
+  04CC   2DC0           	RET
+  04CE   0000 0000      cc1:	BYTE 0,0,0,0,0,-127,73,90,21,-10,11,-126
+  04D2   0081 495A      
+  04D6   15F6 0B82      
+  04DA   0D25 6925      	BYTE 13,37,105,37,50,48,46,49,48,102,32,45
+  04DE   3230 2E31      
+  04E2   3066 202D      
+  04E6   2000 0D53      	BYTE 32,0,13,83,116,97,114,116,105,110,103,32
+  04EA   7461 7274      
+  04EE   696E 6720      
+  04F2   5465 7374      	BYTE 84,101,115,116,46,46,13,0,30,4,24,-109
+  04F6   2E2E 0D00      
+  04FA   1E04 1893      
+  04FE   7481 0000      	BYTE 116,-127,0,0,0,0,0,-126,73,15,-38,-94
+  0502   0000 0082      
+  0506   490F DAA2      
+  050A   9282 3400      	BYTE -110,-126,52,0,0,0,0,-120,13,37,50,48
+  050E   0000 0088      
+  0512   0D25 3230      
+  0516   2E31 3066      	BYTE 46,49,48,102,32,45,32,0,13,32,84,101
+  051A   202D 2000      
+  051E   0D20 5465      
+  0522   7374 696E      	BYTE 115,116,105,110,103,32,100,105,115,99,32,105
+  0526   6720 6469      
+  052A   7363 2069      
+  052E   2F6F 000D      	BYTE 47,111,0,13,79,117,116,112,117,116,32,97
+  0532   4F75 7470      
+  0536   7574 2061      
+  053A   7267 6320      	BYTE 114,103,99,32,102,111,114,32,109,97,105,110
+  053E   666F 7220      
+  0542   6D61 696E      
+  0546   203D 2025      	BYTE 32,61,32,37,100,13,0,37,115,37,99,0
+  054A   640D 0025      
+  054E   7325 6300      
+  0552   7465 7374      	BYTE 116,101,115,116,49,0,119,0,67,114,101,97
+  0556   3100 7700      
+  055A   4372 6561      
+  055E   7465 206E      	BYTE 116,101,32,110,101,119,32,102,105,108,101,32
+  0562   6577 2066      
+  0566   696C 6520      
+  056A   7465 7374      	BYTE 116,101,115,116,49,32,102,111,114,32,119,114
+  056E   3120 666F      
+  0572   7220 7772      
+  0576   6974 696E      	BYTE 105,116,105,110,103,32,102,100,32,61,32,37
+  057A   6720 6664      
+  057E   203D 2025      
+  0582   640D 004F      	BYTE 100,13,0,79,110,101,32,99,104,97,114,97
+  0586   6E65 2063      
+  058A   6861 7261      
+  058E   6374 6572      	BYTE 99,116,101,114,32,119,114,105,116,116,101,110
+  0592   2077 7269      
+  0596   7474 656E      
+  059A   2E2E 2E0D      	BYTE 46,46,46,13,0,116,101,115,116,49,0,114
+  059E   0074 6573      
+  05A2   7431 0072      
+  05A6   004F 7065      	BYTE 0,79,112,101,110,32,102,105,108,101,32,116
+  05AA   6E20 6669      
+  05AE   6C65 2074      
+  05B2   6573 7431      	BYTE 101,115,116,49,32,102,111,114,32,114,101,97
+  05B6   2066 6F72      
+  05BA   2072 6561      
+  05BE   6469 6E67      	BYTE 100,105,110,103,32,102,100,32,61,32,37,100
+  05C2   2066 6420      
+  05C6   3D20 2564      
+  05CA   0D00 4F75      	BYTE 13,0,79,117,116,112,117,116,32,99,104,97
+  05CE   7470 7574      
+  05D2   2063 6861      
+  05D6   7220 203D      	BYTE 114,32,32,61,32,37,99,13,0,13,69,110
+  05DA   2025 630D      
+  05DE   000D 456E      
+  05E2   6420 6F66      	BYTE 100,32,111,102,32,84,101,115,116,13,0
+  05E6   2054 6573      
+  05EA   740D 00        
+  05ED   00             	EVEN
+                        ;/* convert double number to string (f format) */
+                        ;int ftoa2(x,f,str)
+  05EE                  	EVEN
+                        ftoa2:
+                        ;double x;	/* the number to be converted */
+                        ;int f;		/* number of digits to follow decimal point */
+                        ;char *str;	/* output string */
+                        ;{
+                        ;	double scale;		/* scale factor */
+                        ;	int i,				/* copy of f, and # digits before decimal point */
+                        ;		d;				/* a digit */
+                        ;	if( x < 0.0 ) {
+                        ;modstk(newsp,save)
+  05EE   022A FFF6      	AI SP,-10
+                        ;getloc(sym, off)
+  05F2   0204 0010      	LI  R4,16
+  05F6   A10A           	A  SP,R4
+                        ;indirect float
+                        ;fpcall()
+  05F8   2DA0 0264      	CALL @_fload##
+                        ;fpush()
+                        ;fpcall()
+  05FC   2DA0 0268      	CALL @_fpush##
+                        ;constant(lval)
+  0600   0204 098C      	LI R4,cc16+0
+                        ;fpcall()
+  0604   2DA0 05FA      	CALL @_fload##
+                        ;fpcall()
+  0608   2DA0 0000      	CALL @_fplt##
+  060C   C104           	MOV R4,R4
+  060E   1602           	JNE $+6
+  0610   0460 0654      	B @cc17
+                        ;		*str++ = '-' ;
+                        ;modstk(newsp,save)
+                        ;getloc(sym, off)
+  0614   0204 000C      	LI  R4,12
+  0618   A10A           	A  SP,R4
+                        ;zpush()
+  061A   064A           	DECT SP
+  061C   C684           	MOV R4,*SP
+                        ;indirect ccgint
+  061E   C114           	MOV *R4,R4
+                        ;inc()
+  0620   0584           	INC R4
+                        ;zpop()
+  0622   C0FA           	MOV *SP+,R3
+                        ;putstk - int
+  0624   C4C4           	MOV R4,*R3
+                        ;	dec()
+  0626   0604           	DEC R4
+                        ;zpush()
+  0628   064A           	DECT SP
+  062A   C684           	MOV R4,*SP
+                        ;const1(val)
+  062C   0204 002D      	LI R4,45
+                        ;zpop()
+  0630   C0FA           	MOV *SP+,R3
+                        ;putstk - char
+  0632   D4ED 0009      	MOVB @2*R4+1(WP),*R3
+                        ;		x = -x ;
+                        ;getloc(sym, off)
+  0636   0204 0010      	LI  R4,16
+  063A   A10A           	A  SP,R4
+                        ;zpush()
+  063C   064A           	DECT SP
+  063E   C684           	MOV R4,*SP
+                        ;getloc(sym, off)
+  0640   0204 0012      	LI  R4,18
+  0644   A10A           	A  SP,R4
+                        ;indirect float
+                        ;fpcall()
+  0646   2DA0 0606      	CALL @_fload##
+                        ;fpcall()
+  064A   2DA0 0000      	CALL @_minusfa##
+                        ;mainpop()
+  064E   C13A           	MOV *SP+,R4
+                        ;fpcall()
+  0650   2DA0 0252      	CALL @_fstore##
+                        ;	}
+                        ;modstk(newsp,save)
+                        ;	i = f ;
+                        cc17:
+                        ;getloc(sym, off)
+  0654   0204 000E      	LI  R4,14
+  0658   A10A           	A  SP,R4
+                        ;indirect ccgint
+  065A   C114           	MOV *R4,R4
+                        ;put2tos()
+  065C   CA84 0002      	MOV R4,@2(SP)
+                        ;	scale = 2.0 ;
+                        ;getloc(sym, off)
+  0660   0204 0004      	LI  R4,4
+  0664   A10A           	A  SP,R4
+                        ;zpush()
+  0666   064A           	DECT SP
+  0668   C684           	MOV R4,*SP
+                        ;constant(lval)
+  066A   0204 0992      	LI R4,cc16+6
+                        ;fpcall()
+  066E   2DA0 0648      	CALL @_fload##
+                        ;mainpop()
+  0672   C13A           	MOV *SP+,R4
+                        ;fpcall()
+  0674   2DA0 0652      	CALL @_fstore##
+                        ;	while ( i-- )
+                        cc18:
+                        ;getloc(sym, off)
+  0678   0204 0002      	LI  R4,2
+  067C   A10A           	A  SP,R4
+                        ;zpush()
+  067E   064A           	DECT SP
+  0680   C684           	MOV R4,*SP
+                        ;indirect ccgint
+  0682   C114           	MOV *R4,R4
+                        ;	dec()
+  0684   0604           	DEC R4
+                        ;zpop()
+  0686   C0FA           	MOV *SP+,R3
+                        ;putstk - int
+  0688   C4C4           	MOV R4,*R3
+                        ;inc()
+  068A   0584           	INC R4
+  068C   C104           	MOV R4,R4
+  068E   1602           	JNE $+6
+  0690   0460 06BC      	B @cc19
+                        ;		scale *= 10.0 ;
+                        ;getloc(sym, off)
+  0694   0204 0004      	LI  R4,4
+  0698   A10A           	A  SP,R4
+                        ;zpush()
+  069A   064A           	DECT SP
+  069C   C684           	MOV R4,*SP
+                        ;indirect float
+                        ;fpcall()
+  069E   2DA0 0670      	CALL @_fload##
+                        ;fpush()
+                        ;fpcall()
+  06A2   2DA0 05FE      	CALL @_fpush##
+                        ;constant(lval)
+  06A6   0204 0998      	LI R4,cc16+12
+                        ;fpcall()
+  06AA   2DA0 06A0      	CALL @_fload##
+                        ;fpcall()
+  06AE   2DA0 0230      	CALL @_fpmul##
+                        ;mainpop()
+  06B2   C13A           	MOV *SP+,R4
+                        ;fpcall()
+  06B4   2DA0 0676      	CALL @_fstore##
+                        ;jump(label)
+  06B8   0460 0678      	B  @cc18
+                        cc19:
+                        ;	x += 1.0 / scale ;
+                        ;getloc(sym, off)
+  06BC   0204 0010      	LI  R4,16
+  06C0   A10A           	A  SP,R4
+                        ;zpush()
+  06C2   064A           	DECT SP
+  06C4   C684           	MOV R4,*SP
+                        ;indirect float
+                        ;fpcall()
+  06C6   2DA0 06AC      	CALL @_fload##
+                        ;fpush()
+                        ;fpcall()
+  06CA   2DA0 06A4      	CALL @_fpush##
+                        ;constant(lval)
+  06CE   0204 099E      	LI R4,cc16+18
+                        ;fpcall()
+  06D2   2DA0 06C8      	CALL @_fload##
+                        ;fpush()
+                        ;fpcall()
+  06D6   2DA0 06CC      	CALL @_fpush##
+                        ;getloc(sym, off)
+  06DA   0204 0012      	LI  R4,18
+  06DE   A10A           	A  SP,R4
+                        ;indirect float
+                        ;fpcall()
+  06E0   2DA0 06D4      	CALL @_fload##
+                        ;fpcall()
+  06E4   2DA0 0240      	CALL @_fpdiv##
+                        ;fpcall()
+  06E8   2DA0 017C      	CALL @_fpadd##
+                        ;mainpop()
+  06EC   C13A           	MOV *SP+,R4
+                        ;fpcall()
+  06EE   2DA0 06B6      	CALL @_fstore##
+                        ;	/* count places before decimal & scale the number */
+                        ;	i = 0 ;
+                        ;const1(val)
+  06F2   04C4           	CLR R4
+                        ;put2tos()
+  06F4   CA84 0002      	MOV R4,@2(SP)
+                        ;	scale = 1.0 ;
+                        ;getloc(sym, off)
+  06F8   0204 0004      	LI  R4,4
+  06FC   A10A           	A  SP,R4
+                        ;zpush()
+  06FE   064A           	DECT SP
+  0700   C684           	MOV R4,*SP
+                        ;constant(lval)
+  0702   0204 09A4      	LI R4,cc16+24
+                        ;fpcall()
+  0706   2DA0 06E2      	CALL @_fload##
+                        ;mainpop()
+  070A   C13A           	MOV *SP+,R4
+                        ;fpcall()
+  070C   2DA0 06F0      	CALL @_fstore##
+                        ;	while ( x >= scale ) {
+                        cc20:
+                        ;getloc(sym, off)
+  0710   0204 0010      	LI  R4,16
+  0714   A10A           	A  SP,R4
+                        ;indirect float
+                        ;fpcall()
+  0716   2DA0 0708      	CALL @_fload##
+                        ;fpush()
+                        ;fpcall()
+  071A   2DA0 06D8      	CALL @_fpush##
+                        ;getloc(sym, off)
+  071E   0204 000A      	LI  R4,10
+  0722   A10A           	A  SP,R4
+                        ;indirect float
+                        ;fpcall()
+  0724   2DA0 0718      	CALL @_fload##
+                        ;fpcall()
+  0728   2DA0 0000      	CALL @_fpge##
+  072C   C104           	MOV R4,R4
+  072E   1602           	JNE $+6
+  0730   0460 0770      	B @cc21
+                        ;		scale *= 10.0 ;
+                        ;modstk(newsp,save)
+                        ;getloc(sym, off)
+  0734   0204 0004      	LI  R4,4
+  0738   A10A           	A  SP,R4
+                        ;zpush()
+  073A   064A           	DECT SP
+  073C   C684           	MOV R4,*SP
+                        ;indirect float
+                        ;fpcall()
+  073E   2DA0 0726      	CALL @_fload##
+                        ;fpush()
+                        ;fpcall()
+  0742   2DA0 071C      	CALL @_fpush##
+                        ;constant(lval)
+  0746   0204 09AA      	LI R4,cc16+30
+                        ;fpcall()
+  074A   2DA0 0740      	CALL @_fload##
+                        ;fpcall()
+  074E   2DA0 06B0      	CALL @_fpmul##
+                        ;mainpop()
+  0752   C13A           	MOV *SP+,R4
+                        ;fpcall()
+  0754   2DA0 070E      	CALL @_fstore##
+                        ;		i++ ;
+                        ;getloc(sym, off)
+  0758   0204 0002      	LI  R4,2
+  075C   A10A           	A  SP,R4
+                        ;zpush()
+  075E   064A           	DECT SP
+  0760   C684           	MOV R4,*SP
+                        ;indirect ccgint
+  0762   C114           	MOV *R4,R4
+                        ;inc()
+  0764   0584           	INC R4
+                        ;zpop()
+  0766   C0FA           	MOV *SP+,R3
+                        ;putstk - int
+  0768   C4C4           	MOV R4,*R3
+                        ;	dec()
+  076A   0604           	DEC R4
+                        ;	}
+                        ;modstk(newsp,save)
+                        ;jump(label)
+  076C   0460 0710      	B  @cc20
+                        cc21:
+                        ;	while ( i-- ) {
+                        cc22:
+                        ;getloc(sym, off)
+  0770   0204 0002      	LI  R4,2
+  0774   A10A           	A  SP,R4
+                        ;zpush()
+  0776   064A           	DECT SP
+  0778   C684           	MOV R4,*SP
+                        ;indirect ccgint
+  077A   C114           	MOV *R4,R4
+                        ;	dec()
+  077C   0604           	DEC R4
+                        ;zpop()
+  077E   C0FA           	MOV *SP+,R3
+                        ;putstk - int
+  0780   C4C4           	MOV R4,*R3
+                        ;inc()
+  0782   0584           	INC R4
+  0784   C104           	MOV R4,R4
+  0786   1602           	JNE $+6
+  0788   0460 086C      	B @cc23
+                        ;		/* output digits before decimal */
+                        ;		scale = floor(0.5 + scale * 0.1 ) ;
+                        ;modstk(newsp,save)
+                        ;getloc(sym, off)
+  078C   0204 0004      	LI  R4,4
+  0790   A10A           	A  SP,R4
+                        ;zpush()
+  0792   064A           	DECT SP
+  0794   C684           	MOV R4,*SP
+                        ;constant(lval)
+  0796   0204 09B0      	LI R4,cc16+36
+                        ;fpcall()
+  079A   2DA0 074C      	CALL @_fload##
+                        ;fpush()
+                        ;fpcall()
+  079E   2DA0 0744      	CALL @_fpush##
+                        ;getloc(sym, off)
+  07A2   0204 000C      	LI  R4,12
+  07A6   A10A           	A  SP,R4
+                        ;indirect float
+                        ;fpcall()
+  07A8   2DA0 079C      	CALL @_fload##
+                        ;fpush()
+                        ;fpcall()
+  07AC   2DA0 07A0      	CALL @_fpush##
+                        ;constant(lval)
+  07B0   0204 09B6      	LI R4,cc16+42
+                        ;fpcall()
+  07B4   2DA0 07AA      	CALL @_fload##
+                        ;fpcall()
+  07B8   2DA0 0750      	CALL @_fpmul##
+                        ;fpcall()
+  07BC   2DA0 06EA      	CALL @_fpadd##
+                        ;fpush()
+                        ;fpcall()
+  07C0   2DA0 07AE      	CALL @_fpush##
+                        ;zcall()
+  07C4   2DA0 0000      	CALL @floor
+                        ;modstk(newsp,save)
+  07C8   022A 0006      	AI SP,6
+                        ;mainpop()
+  07CC   C13A           	MOV *SP+,R4
+                        ;fpcall()
+  07CE   2DA0 0756      	CALL @_fstore##
+                        ;		d = ifix( x / scale ) ;
+                        ;getloc(sym, off)
+  07D2   0204 0010      	LI  R4,16
+  07D6   A10A           	A  SP,R4
+                        ;indirect float
+                        ;fpcall()
+  07D8   2DA0 07B6      	CALL @_fload##
+                        ;fpush()
+                        ;fpcall()
+  07DC   2DA0 07C2      	CALL @_fpush##
+                        ;getloc(sym, off)
+  07E0   0204 000A      	LI  R4,10
+  07E4   A10A           	A  SP,R4
+                        ;indirect float
+                        ;fpcall()
+  07E6   2DA0 07DA      	CALL @_fload##
+                        ;fpcall()
+  07EA   2DA0 06E6      	CALL @_fpdiv##
+                        ;fpush()
+                        ;fpcall()
+  07EE   2DA0 07DE      	CALL @_fpush##
+                        ;zcall()
+  07F2   2DA0 0000      	CALL @ifix
+                        ;modstk(newsp,save)
+  07F6   022A 0006      	AI SP,6
+                        ;puttos()
+  07FA   C684           	MOV R4,*SP
+                        ;		*str++ = d + '0' ;
+                        ;getloc(sym, off)
+  07FC   0204 000C      	LI  R4,12
+  0800   A10A           	A  SP,R4
+                        ;zpush()
+  0802   064A           	DECT SP
+  0804   C684           	MOV R4,*SP
+                        ;indirect ccgint
+  0806   C114           	MOV *R4,R4
+                        ;inc()
+  0808   0584           	INC R4
+                        ;zpop()
+  080A   C0FA           	MOV *SP+,R3
+                        ;putstk - int
+  080C   C4C4           	MOV R4,*R3
+                        ;	dec()
+  080E   0604           	DEC R4
+                        ;zpush()
+  0810   064A           	DECT SP
+  0812   C684           	MOV R4,*SP
+                        ;getloc(sym, off)
+  0814   0204 0002      	LI  R4,2
+  0818   A10A           	A  SP,R4
+                        ;indirect ccgint
+  081A   C114           	MOV *R4,R4
+                        ;const2(val)
+  081C   0203 0030      	LI R3,48
+                        ;	zadd()
+  0820   A103           	A R3,R4
+                        ;zpop()
+  0822   C0FA           	MOV *SP+,R3
+                        ;putstk - char
+  0824   D4ED 0009      	MOVB @2*R4+1(WP),*R3
+                        ;		x -= float(d) * scale ;
+                        ;getloc(sym, off)
+  0828   0204 0010      	LI  R4,16
+  082C   A10A           	A  SP,R4
+                        ;zpush()
+  082E   064A           	DECT SP
+  0830   C684           	MOV R4,*SP
+                        ;indirect float
+                        ;fpcall()
+  0832   2DA0 07E8      	CALL @_fload##
+                        ;fpush()
+                        ;fpcall()
+  0836   2DA0 07F0      	CALL @_fpush##
+                        ;getloc(sym, off)
+  083A   0204 0008      	LI  R4,8
+  083E   A10A           	A  SP,R4
+                        ;indirect ccgint
+  0840   C114           	MOV *R4,R4
+                        ;zpush()
+  0842   064A           	DECT SP
+  0844   C684           	MOV R4,*SP
+                        ;zcall()
+  0846   2DA0 021E      	CALL @float
+                        ;modstk(newsp,save)
+  084A   05CA           	INCT SP
+                        ;fpush()
+                        ;fpcall()
+  084C   2DA0 0838      	CALL @_fpush##
+                        ;getloc(sym, off)
+  0850   0204 0012      	LI  R4,18
+  0854   A10A           	A  SP,R4
+                        ;indirect float
+                        ;fpcall()
+  0856   2DA0 0834      	CALL @_fload##
+                        ;fpcall()
+  085A   2DA0 07BA      	CALL @_fpmul##
+                        ;fpcall()
+  085E   2DA0 0000      	CALL @_fpsub##
+                        ;mainpop()
+  0862   C13A           	MOV *SP+,R4
+                        ;fpcall()
+  0864   2DA0 07D0      	CALL @_fstore##
+                        ;	}
+                        ;modstk(newsp,save)
+                        ;jump(label)
+  0868   0460 0770      	B  @cc22
+                        cc23:
+                        ;	if ( f <= 0 ) {
+                        ;getloc(sym, off)
+  086C   0204 000E      	LI  R4,14
+  0870   A10A           	A  SP,R4
+                        ;indirect ccgint
+  0872   C114           	MOV *R4,R4
+                        ;le0(label)
+  0874   0284 0000      	CI R4,0
+  0878   1202           	JLE $+6
+  087A   0460 089A      	B @cc24
+                        ;		*str = NULL ;
+                        ;modstk(newsp,save)
+                        ;getloc(sym, off)
+  087E   0204 000C      	LI  R4,12
+  0882   A10A           	A  SP,R4
+                        ;indirect ccgint
+  0884   C114           	MOV *R4,R4
+                        ;zpush()
+  0886   064A           	DECT SP
+  0888   C684           	MOV R4,*SP
+                        ;const1(val)
+  088A   04C4           	CLR R4
+                        ;zpop()
+  088C   C0FA           	MOV *SP+,R3
+                        ;putstk - char
+  088E   D4ED 0009      	MOVB @2*R4+1(WP),*R3
+                        ;		return 0;
+                        ;const1(val)
+  0892   04C4           	CLR R4
+                        ;modstk(newsp,save)
+  0894   022A 000A      	AI SP,10
+  0898   2DC0           	RET
+                        ;	}
+                        ;	*str++ = '.' ;
+                        cc24:
+                        ;getloc(sym, off)
+  089A   0204 000C      	LI  R4,12
+  089E   A10A           	A  SP,R4
+                        ;zpush()
+  08A0   064A           	DECT SP
+  08A2   C684           	MOV R4,*SP
+                        ;indirect ccgint
+  08A4   C114           	MOV *R4,R4
+                        ;inc()
+  08A6   0584           	INC R4
+                        ;zpop()
+  08A8   C0FA           	MOV *SP+,R3
+                        ;putstk - int
+  08AA   C4C4           	MOV R4,*R3
+                        ;	dec()
+  08AC   0604           	DEC R4
+                        ;zpush()
+  08AE   064A           	DECT SP
+  08B0   C684           	MOV R4,*SP
+                        ;const1(val)
+  08B2   0204 002E      	LI R4,46
+                        ;zpop()
+  08B6   C0FA           	MOV *SP+,R3
+                        ;putstk - char
+  08B8   D4ED 0009      	MOVB @2*R4+1(WP),*R3
+                        ;	while ( f-- ) {
+                        cc25:
+                        ;getloc(sym, off)
+  08BC   0204 000E      	LI  R4,14
+  08C0   A10A           	A  SP,R4
+                        ;zpush()
+  08C2   064A           	DECT SP
+  08C4   C684           	MOV R4,*SP
+                        ;indirect ccgint
+  08C6   C114           	MOV *R4,R4
+                        ;	dec()
+  08C8   0604           	DEC R4
+                        ;zpop()
+  08CA   C0FA           	MOV *SP+,R3
+                        ;putstk - int
+  08CC   C4C4           	MOV R4,*R3
+                        ;inc()
+  08CE   0584           	INC R4
+  08D0   C104           	MOV R4,R4
+  08D2   1602           	JNE $+6
+  08D4   0460 0972      	B @cc26
+                        ;		/* output digits after decimal */
+                        ;		x *= 10.0 ;
+                        ;modstk(newsp,save)
+                        ;getloc(sym, off)
+  08D8   0204 0010      	LI  R4,16
+  08DC   A10A           	A  SP,R4
+                        ;zpush()
+  08DE   064A           	DECT SP
+  08E0   C684           	MOV R4,*SP
+                        ;indirect float
+                        ;fpcall()
+  08E2   2DA0 0858      	CALL @_fload##
+                        ;fpush()
+                        ;fpcall()
+  08E6   2DA0 084E      	CALL @_fpush##
+                        ;constant(lval)
+  08EA   0204 09BC      	LI R4,cc16+48
+                        ;fpcall()
+  08EE   2DA0 08E4      	CALL @_fload##
+                        ;fpcall()
+  08F2   2DA0 085C      	CALL @_fpmul##
+                        ;mainpop()
+  08F6   C13A           	MOV *SP+,R4
+                        ;fpcall()
+  08F8   2DA0 0866      	CALL @_fstore##
+                        ;		d = ifix(x) ;
+                        ;getloc(sym, off)
+  08FC   0204 0010      	LI  R4,16
+  0900   A10A           	A  SP,R4
+                        ;indirect float
+                        ;fpcall()
+  0902   2DA0 08F0      	CALL @_fload##
+                        ;fpush()
+                        ;fpcall()
+  0906   2DA0 08E8      	CALL @_fpush##
+                        ;zcall()
+  090A   2DA0 07F4      	CALL @ifix
+                        ;modstk(newsp,save)
+  090E   022A 0006      	AI SP,6
+                        ;puttos()
+  0912   C684           	MOV R4,*SP
+                        ;		*str++ = d + '0' ;
+                        ;getloc(sym, off)
+  0914   0204 000C      	LI  R4,12
+  0918   A10A           	A  SP,R4
+                        ;zpush()
+  091A   064A           	DECT SP
+  091C   C684           	MOV R4,*SP
+                        ;indirect ccgint
+  091E   C114           	MOV *R4,R4
+                        ;inc()
+  0920   0584           	INC R4
+                        ;zpop()
+  0922   C0FA           	MOV *SP+,R3
+                        ;putstk - int
+  0924   C4C4           	MOV R4,*R3
+                        ;	dec()
+  0926   0604           	DEC R4
+                        ;zpush()
+  0928   064A           	DECT SP
+  092A   C684           	MOV R4,*SP
+                        ;getloc(sym, off)
+  092C   0204 0002      	LI  R4,2
+  0930   A10A           	A  SP,R4
+                        ;indirect ccgint
+  0932   C114           	MOV *R4,R4
+                        ;const2(val)
+  0934   0203 0030      	LI R3,48
+                        ;	zadd()
+  0938   A103           	A R3,R4
+                        ;zpop()
+  093A   C0FA           	MOV *SP+,R3
+                        ;putstk - char
+  093C   D4ED 0009      	MOVB @2*R4+1(WP),*R3
+                        ;		x -= float(d) ;
+                        ;getloc(sym, off)
+  0940   0204 0010      	LI  R4,16
+  0944   A10A           	A  SP,R4
+                        ;zpush()
+  0946   064A           	DECT SP
+  0948   C684           	MOV R4,*SP
+                        ;indirect float
+                        ;fpcall()
+  094A   2DA0 0904      	CALL @_fload##
+                        ;fpush()
+                        ;fpcall()
+  094E   2DA0 0908      	CALL @_fpush##
+                        ;getloc(sym, off)
+  0952   0204 0008      	LI  R4,8
+  0956   A10A           	A  SP,R4
+                        ;indirect ccgint
+  0958   C114           	MOV *R4,R4
+                        ;zpush()
+  095A   064A           	DECT SP
+  095C   C684           	MOV R4,*SP
+                        ;zcall()
+  095E   2DA0 0848      	CALL @float
+                        ;modstk(newsp,save)
+  0962   05CA           	INCT SP
+                        ;fpcall()
+  0964   2DA0 0860      	CALL @_fpsub##
+                        ;mainpop()
+  0968   C13A           	MOV *SP+,R4
+                        ;fpcall()
+  096A   2DA0 08FA      	CALL @_fstore##
+                        ;	}
+                        ;modstk(newsp,save)
+                        ;jump(label)
+  096E   0460 08BC      	B  @cc25
+                        cc26:
+                        ;	*str = NULL ;
+                        ;getloc(sym, off)
+  0972   0204 000C      	LI  R4,12
+  0976   A10A           	A  SP,R4
+                        ;indirect ccgint
+  0978   C114           	MOV *R4,R4
+                        ;zpush()
+  097A   064A           	DECT SP
+  097C   C684           	MOV R4,*SP
+                        ;const1(val)
+  097E   04C4           	CLR R4
+                        ;zpop()
+  0980   C0FA           	MOV *SP+,R3
+                        ;putstk - char
+  0982   D4ED 0009      	MOVB @2*R4+1(WP),*R3
+                        ;}
+                        ;modstk(newsp,save)
+  0986   022A 000A      	AI SP,10
+                        ;modstk(newsp,save)
+  098A   2DC0           	RET
+  098C   0000 0000      cc16:	BYTE 0,0,0,0,0,0,0,0,0,0,0,-126
+  0990   0000 0000      
+  0994   0000 0082      
+  0998   2000 0000      	BYTE 32,0,0,0,0,-124,0,0,0,0,0,-127
+  099C   0084 0000      
+  09A0   0000 0081      
+  09A4   0000 0000      	BYTE 0,0,0,0,0,-127,32,0,0,0,0,-124
+  09A8   0081 2000      
+  09AC   0000 0084      
+  09B0   0000 0000      	BYTE 0,0,0,0,0,-128,76,-52,-52,-52,-52,125
+  09B4   0080 4CCC      
+  09B8   CCCC CC7D      
+  09BC   2000 0000      	BYTE 32,0,0,0,0,-124
+  09C0   0084           
+                        ;int fp2string(fp) double fp; {
+  09C2                  	EVEN
+                        fp2string:
+                        ;	int *ptr;
+                        ;	ptr = &fp;
+                        ;modstk(newsp,save)
+  09C2   064A           	DECT SP
+                        ;getloc(sym, off)
+  09C4   0204 0004      	LI  R4,4
+  09C8   A10A           	A  SP,R4
+                        ;puttos()
+  09CA   C684           	MOV R4,*SP
+                        ;	printf("%04x", *ptr++); // gives 12AB
+                        ;	printf("%04x", *ptr++); // gives 12AB
+                        ;	printf("%04x\n", *ptr++); // gives 12AB
+                        ;}
+                        ;constant(lval)
+  09CC   0204 0A66      	LI R4,cc27+0
+                        ;zpush()
+  09D0   064A           	DECT SP
+  09D2   C684           	MOV R4,*SP
+                        ;getloc(sym, off)
+  09D4   0204 0002      	LI  R4,2
+  09D8   A10A           	A  SP,R4
+                        ;zpush()
+  09DA   064A           	DECT SP
+  09DC   C684           	MOV R4,*SP
+                        ;indirect ccgint
+  09DE   C114           	MOV *R4,R4
+                        ;inct()
+  09E0   05C4           	INCT R4
+                        ;zpop()
+  09E2   C0FA           	MOV *SP+,R3
+                        ;putstk - int
+  09E4   C4C4           	MOV R4,*R3
+                        ;	dect()
+  09E6   0644           	DECT R4
+                        ;indirect ccgint
+  09E8   C114           	MOV *R4,R4
+                        ;zpush()
+  09EA   064A           	DECT SP
+  09EC   C684           	MOV R4,*SP
+                        ;loadarg(n)
+  09EE   0201 0002      	LI R1,2
+  09F2   06A0 04C0      	BL @_setargc##
+                        ;zcall()
+  09F6   2DA0 04C4      	CALL @printf
+                        ;modstk(newsp,save)
+  09FA   022A 0004      	AI SP,4
+                        ;constant(lval)
+  09FE   0204 0A6B      	LI R4,cc27+5
+                        ;zpush()
+  0A02   064A           	DECT SP
+  0A04   C684           	MOV R4,*SP
+                        ;getloc(sym, off)
+  0A06   0204 0002      	LI  R4,2
+  0A0A   A10A           	A  SP,R4
+                        ;zpush()
+  0A0C   064A           	DECT SP
+  0A0E   C684           	MOV R4,*SP
+                        ;indirect ccgint
+  0A10   C114           	MOV *R4,R4
+                        ;inct()
+  0A12   05C4           	INCT R4
+                        ;zpop()
+  0A14   C0FA           	MOV *SP+,R3
+                        ;putstk - int
+  0A16   C4C4           	MOV R4,*R3
+                        ;	dect()
+  0A18   0644           	DECT R4
+                        ;indirect ccgint
+  0A1A   C114           	MOV *R4,R4
+                        ;zpush()
+  0A1C   064A           	DECT SP
+  0A1E   C684           	MOV R4,*SP
+                        ;loadarg(n)
+  0A20   0201 0002      	LI R1,2
+  0A24   06A0 09F4      	BL @_setargc##
+                        ;zcall()
+  0A28   2DA0 09F8      	CALL @printf
+                        ;modstk(newsp,save)
+  0A2C   022A 0004      	AI SP,4
+                        ;constant(lval)
+  0A30   0204 0A70      	LI R4,cc27+10
+                        ;zpush()
+  0A34   064A           	DECT SP
+  0A36   C684           	MOV R4,*SP
+                        ;getloc(sym, off)
+  0A38   0204 0002      	LI  R4,2
+  0A3C   A10A           	A  SP,R4
+                        ;zpush()
+  0A3E   064A           	DECT SP
+  0A40   C684           	MOV R4,*SP
+                        ;indirect ccgint
+  0A42   C114           	MOV *R4,R4
+                        ;inct()
+  0A44   05C4           	INCT R4
+                        ;zpop()
+  0A46   C0FA           	MOV *SP+,R3
+                        ;putstk - int
+  0A48   C4C4           	MOV R4,*R3
+                        ;	dect()
+  0A4A   0644           	DECT R4
+                        ;indirect ccgint
+  0A4C   C114           	MOV *R4,R4
+                        ;zpush()
+  0A4E   064A           	DECT SP
+  0A50   C684           	MOV R4,*SP
+                        ;loadarg(n)
+  0A52   0201 0002      	LI R1,2
+  0A56   06A0 0A26      	BL @_setargc##
+                        ;zcall()
+  0A5A   2DA0 0A2A      	CALL @printf
+                        ;modstk(newsp,save)
+  0A5E   022A 0004      	AI SP,4
+                        ;modstk(newsp,save)
+  0A62   05CA           	INCT SP
+                        ;modstk(newsp,save)
+  0A64   2DC0           	RET
+  0A66   2530 3478      cc27:	BYTE 37,48,52,120,0,37,48,52,120,0,37,48
+  0A6A   0025 3034      
+  0A6E   7800 2530      
+  0A72   3478 0D00      	BYTE 52,120,13,0
+                        ;int upper(c, ch) int c; char ch; {
+  0A76                  	EVEN
+                        upper:
+                        ;	c = ch;
+                        ;modstk(newsp,save)
+                        ;getloc(sym, off)
+  0A76   0204 0004      	LI  R4,4
+  0A7A   A10A           	A  SP,R4
+                        ;zpush()
+  0A7C   064A           	DECT SP
+  0A7E   C684           	MOV R4,*SP
+                        ;getloc(sym, off)
+                        ;Char offset
+  0A80   0204 0005      	LI  R4,5
+  0A84   A10A           	A  SP,R4
+                        ;indirect ccgchar
+  0A86   D114           	MOVB *R4,R4
+  0A88   0884           	SRA R4,8
+                        ;zpop()
+  0A8A   C0FA           	MOV *SP+,R3
+                        ;putstk - int
+  0A8C   C4C4           	MOV R4,*R3
+                        ;	return c;
+                        ;getloc(sym, off)
+  0A8E   0204 0004      	LI  R4,4
+  0A92   A10A           	A  SP,R4
+                        ;indirect ccgint
+  0A94   C114           	MOV *R4,R4
+                        ;modstk(newsp,save)
+  0A96   2DC0           	RET
+                        ;}
+                        ;// Arithmetic Operations
+                        ;testArith() {
+  0A98                  	EVEN
+                        testArith:
+                        ;	 int a, b, result;
+                        ;     a = 5;
+                        ;modstk(newsp,save)
+  0A98   022A FFFA      	AI SP,-6
+                        ;getloc(sym, off)
+  0A9C   0204 0004      	LI  R4,4
+  0AA0   A10A           	A  SP,R4
+                        ;zpush()
+  0AA2   064A           	DECT SP
+  0AA4   C684           	MOV R4,*SP
+                        ;const1(val)
+  0AA6   0204 0005      	LI R4,5
+                        ;zpop()
+  0AAA   C0FA           	MOV *SP+,R3
+                        ;putstk - int
+  0AAC   C4C4           	MOV R4,*R3
+                        ;     b = 3;
+                        ;const1(val)
+  0AAE   0204 0003      	LI R4,3
+                        ;put2tos()
+  0AB2   CA84 0002      	MOV R4,@2(SP)
+                        ;     result = a + b;
+                        ;getloc(sym, off)
+  0AB6   0204 0004      	LI  R4,4
+  0ABA   A10A           	A  SP,R4
+                        ;indirect ccgint
+  0ABC   C114           	MOV *R4,R4
+                        ;zpush()
+  0ABE   064A           	DECT SP
+  0AC0   C684           	MOV R4,*SP
+                        ;getloc(sym, off)
+  0AC2   0204 0004      	LI  R4,4
+  0AC6   A10A           	A  SP,R4
+                        ;indirect ccgint
+  0AC8   C114           	MOV *R4,R4
+                        ;zpop()
+  0ACA   C0FA           	MOV *SP+,R3
+                        ;	zadd()
+  0ACC   A103           	A R3,R4
+                        ;puttos()
+  0ACE   C684           	MOV R4,*SP
+                        ;    printf("Arithmetic Operations Result: %d\n", result);
+                        ;constant(lval)
+  0AD0   0204 0AFA      	LI R4,cc29+0
+                        ;zpush()
+  0AD4   064A           	DECT SP
+  0AD6   C684           	MOV R4,*SP
+                        ;getloc(sym, off)
+  0AD8   0204 0002      	LI  R4,2
+  0ADC   A10A           	A  SP,R4
+                        ;indirect ccgint
+  0ADE   C114           	MOV *R4,R4
+                        ;zpush()
+  0AE0   064A           	DECT SP
+  0AE2   C684           	MOV R4,*SP
+                        ;loadarg(n)
+  0AE4   0201 0002      	LI R1,2
+  0AE8   06A0 0A58      	BL @_setargc##
+                        ;zcall()
+  0AEC   2DA0 0A5C      	CALL @printf
+                        ;modstk(newsp,save)
+  0AF0   022A 0004      	AI SP,4
+                        ;}
+                        ;modstk(newsp,save)
+  0AF4   022A 0006      	AI SP,6
+                        ;modstk(newsp,save)
+  0AF8   2DC0           	RET
+  0AFA   4172 6974      cc29:	BYTE 65,114,105,116,104,109,101,116,105,99,32,79
+  0AFE   686D 6574      
+  0B02   6963 204F      
+  0B06   7065 7261      	BYTE 112,101,114,97,116,105,111,110,115,32,82,101
+  0B0A   7469 6F6E      
+  0B0E   7320 5265      
+  0B12   7375 6C74      	BYTE 115,117,108,116,58,32,37,100,13,0
+  0B16   3A20 2564      
+  0B1A   0D00           
+                        ;// Control Flow
+                        ; testControl() {
+  0B1C                  	EVEN
+                        testControl:
+                        ;	 int x;
+                        ;     x = 10;
+                        ;modstk(newsp,save)
+  0B1C   064A           	DECT SP
+                        ;const1(val)
+  0B1E   0204 000A      	LI R4,10
+                        ;puttos()
+  0B22   C684           	MOV R4,*SP
+                        ;    if (x > 5) {
+                        ;getloc(sym, off)
+  0B24   C10A           	MOV SP,R4
+                        ;indirect ccgint
+  0B26   C114           	MOV *R4,R4
+                        ;zpush()
+  0B28   064A           	DECT SP
+  0B2A   C684           	MOV R4,*SP
+                        ;const1(val)
+  0B2C   0204 0005      	LI R4,5
+                        ;zpop()
+  0B30   C0FA           	MOV *SP+,R3
+                        ;_ccgt
+  0B32   8103           	C R3,R4
+  0B34   1502           	JGT $+6
+  0B36   0460 0B54      	B @cc31
+                        ;        printf("Control Flow: x is greater than 5\n");
+                        ;modstk(newsp,save)
+                        ;constant(lval)
+  0B3A   0204 0B6E      	LI R4,cc30+0
+                        ;zpush()
+  0B3E   064A           	DECT SP
+  0B40   C684           	MOV R4,*SP
+                        ;loadarg(n)
+  0B42   0201 0001      	LI R1,1
+  0B46   06A0 0AEA      	BL @_setargc##
+                        ;zcall()
+  0B4A   2DA0 0AEE      	CALL @printf
+                        ;modstk(newsp,save)
+  0B4E   05CA           	INCT SP
+                        ;    } else {
+                        ;modstk(newsp,save)
+                        ;jump(label)
+  0B50   0460 0B6A      	B  @cc32
+                        cc31:
+                        ;        printf("Control Flow: x is less than or equal to 5\n");
+                        ;modstk(newsp,save)
+                        ;constant(lval)
+  0B54   0204 0B91      	LI R4,cc30+35
+                        ;zpush()
+  0B58   064A           	DECT SP
+  0B5A   C684           	MOV R4,*SP
+                        ;loadarg(n)
+  0B5C   0201 0001      	LI R1,1
+  0B60   06A0 0B48      	BL @_setargc##
+                        ;zcall()
+  0B64   2DA0 0B4C      	CALL @printf
+                        ;modstk(newsp,save)
+  0B68   05CA           	INCT SP
+                        ;    }
+                        ;modstk(newsp,save)
+                        cc32:
+                        ;}
+                        ;modstk(newsp,save)
+  0B6A   05CA           	INCT SP
+                        ;modstk(newsp,save)
+  0B6C   2DC0           	RET
+  0B6E   436F 6E74      cc30:	BYTE 67,111,110,116,114,111,108,32,70,108,111,119
+  0B72   726F 6C20      
+  0B76   466C 6F77      
+  0B7A   3A20 7820      	BYTE 58,32,120,32,105,115,32,103,114,101,97,116
+  0B7E   6973 2067      
+  0B82   7265 6174      
+  0B86   6572 2074      	BYTE 101,114,32,116,104,97,110,32,53,13,0,67
+  0B8A   6861 6E20      
+  0B8E   350D 0043      
+  0B92   6F6E 7472      	BYTE 111,110,116,114,111,108,32,70,108,111,119,58
+  0B96   6F6C 2046      
+  0B9A   6C6F 773A      
+  0B9E   2078 2069      	BYTE 32,120,32,105,115,32,108,101,115,115,32,116
+  0BA2   7320 6C65      
+  0BA6   7373 2074      
+  0BAA   6861 6E20      	BYTE 104,97,110,32,111,114,32,101,113,117,97,108
+  0BAE   6F72 2065      
+  0BB2   7175 616C      
+  0BB6   2074 6F20      	BYTE 32,116,111,32,53,13,0
+  0BBA   350D 00        
+  0BBD   00             	EVEN
+                        ; // Arrays
+                        ; testArrays() {
+  0BBE                  	EVEN
+                        testArrays:
+                        ; 	    int arr[5];
+                        ; 	    int i;
+                        ; 	   arr[0] = 1;
+                        ;modstk(newsp,save)
+  0BBE   022A FFF2      	AI SP,-14
+                        ;getloc(sym, off)
+  0BC2   0204 0002      	LI  R4,2
+  0BC6   A10A           	A  SP,R4
+                        ;zpush()
+  0BC8   064A           	DECT SP
+  0BCA   C684           	MOV R4,*SP
+                        ;const1(val)
+  0BCC   0204 0001      	LI R4,1
+                        ;zpop()
+  0BD0   C0FA           	MOV *SP+,R3
+                        ;putstk - int
+  0BD2   C4C4           	MOV R4,*R3
+                        ; 	   arr[1] = 2;
+                        ;getloc(sym, off)
+  0BD4   0204 0004      	LI  R4,4
+  0BD8   A10A           	A  SP,R4
+                        ;zpush()
+  0BDA   064A           	DECT SP
+  0BDC   C684           	MOV R4,*SP
+                        ;const1(val)
+  0BDE   0204 0002      	LI R4,2
+                        ;zpop()
+  0BE2   C0FA           	MOV *SP+,R3
+                        ;putstk - int
+  0BE4   C4C4           	MOV R4,*R3
+                        ; 	   arr[2] = 3;
+                        ;getloc(sym, off)
+  0BE6   0204 0006      	LI  R4,6
+  0BEA   A10A           	A  SP,R4
+                        ;zpush()
+  0BEC   064A           	DECT SP
+  0BEE   C684           	MOV R4,*SP
+                        ;const1(val)
+  0BF0   0204 0003      	LI R4,3
+                        ;zpop()
+  0BF4   C0FA           	MOV *SP+,R3
+                        ;putstk - int
+  0BF6   C4C4           	MOV R4,*R3
+                        ; 	   arr[3] = 4;
+                        ;getloc(sym, off)
+  0BF8   0204 0008      	LI  R4,8
+  0BFC   A10A           	A  SP,R4
+                        ;zpush()
+  0BFE   064A           	DECT SP
+  0C00   C684           	MOV R4,*SP
+                        ;const1(val)
+  0C02   0204 0004      	LI R4,4
+                        ;zpop()
+  0C06   C0FA           	MOV *SP+,R3
+                        ;putstk - int
+  0C08   C4C4           	MOV R4,*R3
+                        ; 	   arr[4] = 5;
+                        ;getloc(sym, off)
+  0C0A   0204 000A      	LI  R4,10
+  0C0E   A10A           	A  SP,R4
+                        ;zpush()
+  0C10   064A           	DECT SP
+  0C12   C684           	MOV R4,*SP
+                        ;const1(val)
+  0C14   0204 0005      	LI R4,5
+                        ;zpop()
+  0C18   C0FA           	MOV *SP+,R3
+                        ;putstk - int
+  0C1A   C4C4           	MOV R4,*R3
+                        ; 	 //   arr= {1, 2, 3, 4, 5};
+                        ; 	    printf("Arrays: ");
+                        ;constant(lval)
+  0C1C   0204 0CBA      	LI R4,cc33+0
+                        ;zpush()
+  0C20   064A           	DECT SP
+  0C22   C684           	MOV R4,*SP
+                        ;loadarg(n)
+  0C24   0201 0001      	LI R1,1
+  0C28   06A0 0B62      	BL @_setargc##
+                        ;zcall()
+  0C2C   2DA0 0B66      	CALL @printf
+                        ;modstk(newsp,save)
+  0C30   05CA           	INCT SP
+                        ; 	    for (i = 0; i < 5; i++) {
+                        ;const1(val)
+  0C32   04C4           	CLR R4
+                        ;puttos()
+  0C34   C684           	MOV R4,*SP
+                        cc36:
+                        ;getloc(sym, off)
+  0C36   C10A           	MOV SP,R4
+                        ;indirect ccgint
+  0C38   C114           	MOV *R4,R4
+                        ;zpush()
+  0C3A   064A           	DECT SP
+  0C3C   C684           	MOV R4,*SP
+                        ;const1(val)
+  0C3E   0204 0005      	LI R4,5
+                        ;zpop()
+  0C42   C0FA           	MOV *SP+,R3
+                        ;_cclt
+  0C44   8103           	C R3,R4
+  0C46   1102           	JLT $+6
+  0C48   0460 0C9E      	B @cc35
+                        ;jump(label)
+  0C4C   0460 0C64      	B  @cc37
+                        cc34:
+                        ;getloc(sym, off)
+  0C50   C10A           	MOV SP,R4
+                        ;zpush()
+  0C52   064A           	DECT SP
+  0C54   C684           	MOV R4,*SP
+                        ;indirect ccgint
+  0C56   C114           	MOV *R4,R4
+                        ;inc()
+  0C58   0584           	INC R4
+                        ;zpop()
+  0C5A   C0FA           	MOV *SP+,R3
+                        ;putstk - int
+  0C5C   C4C4           	MOV R4,*R3
+                        ;	dec()
+  0C5E   0604           	DEC R4
+                        ;jump(label)
+  0C60   0460 0C36      	B  @cc36
+                        cc37:
+                        ; 	        printf("%d ", arr[i]);
+                        ;modstk(newsp,save)
+                        ;constant(lval)
+  0C64   0204 0CC3      	LI R4,cc33+9
+                        ;zpush()
+  0C68   064A           	DECT SP
+  0C6A   C684           	MOV R4,*SP
+                        ;getloc(sym, off)
+  0C6C   0204 0004      	LI  R4,4
+  0C70   A10A           	A  SP,R4
+                        ;zpush()
+  0C72   064A           	DECT SP
+  0C74   C684           	MOV R4,*SP
+                        ;getloc(sym, off)
+  0C76   0204 0004      	LI  R4,4
+  0C7A   A10A           	A  SP,R4
+                        ;indirect ccgint
+  0C7C   C114           	MOV *R4,R4
+                        ;scale(type,tag)
+                        ;	doublereg()
+  0C7E   A104           	A R4,R4
+                        ;zpop()
+  0C80   C0FA           	MOV *SP+,R3
+                        ;	zadd()
+  0C82   A103           	A R3,R4
+                        ;indirect ccgint
+  0C84   C114           	MOV *R4,R4
+                        ;zpush()
+  0C86   064A           	DECT SP
+  0C88   C684           	MOV R4,*SP
+                        ;loadarg(n)
+  0C8A   0201 0002      	LI R1,2
+  0C8E   06A0 0C2A      	BL @_setargc##
+                        ;zcall()
+  0C92   2DA0 0C2E      	CALL @printf
+                        ;modstk(newsp,save)
+  0C96   022A 0004      	AI SP,4
+                        ; 	    }
+                        ;modstk(newsp,save)
+                        ;jump(label)
+  0C9A   0460 0C50      	B  @cc34
+                        cc35:
+                        ; 	     printf("\n");
+                        ;constant(lval)
+  0C9E   0204 0CC7      	LI R4,cc33+13
+                        ;zpush()
+  0CA2   064A           	DECT SP
+  0CA4   C684           	MOV R4,*SP
+                        ;loadarg(n)
+  0CA6   0201 0001      	LI R1,1
+  0CAA   06A0 0C90      	BL @_setargc##
+                        ;zcall()
+  0CAE   2DA0 0C94      	CALL @printf
+                        ;modstk(newsp,save)
+  0CB2   05CA           	INCT SP
+                        ; }
+                        ;modstk(newsp,save)
+  0CB4   022A 000E      	AI SP,14
+                        ;modstk(newsp,save)
+  0CB8   2DC0           	RET
+  0CBA   4172 7261      cc33:	BYTE 65,114,114,97,121,115,58,32,0,37,100,32
+  0CBE   7973 3A20      
+  0CC2   0025 6420      
+  0CC6   000D 00        	BYTE 0,13,0
+  0CC9   00             	EVEN
+                        ; // Function Calls
+                        ; int add(a, b) int a; int b; {
+  0CCA                  	EVEN
+                        add:
+                        ;     return (a + b);
+                        ;modstk(newsp,save)
+                        ;getloc(sym, off)
+  0CCA   0204 0004      	LI  R4,4
+  0CCE   A10A           	A  SP,R4
+                        ;indirect ccgint
+  0CD0   C114           	MOV *R4,R4
+                        ;zpush()
+  0CD2   064A           	DECT SP
+  0CD4   C684           	MOV R4,*SP
+                        ;getloc(sym, off)
+  0CD6   0204 0004      	LI  R4,4
+  0CDA   A10A           	A  SP,R4
+                        ;indirect ccgint
+  0CDC   C114           	MOV *R4,R4
+                        ;zpop()
+  0CDE   C0FA           	MOV *SP+,R3
+                        ;	zadd()
+  0CE0   A103           	A R3,R4
+                        ;modstk(newsp,save)
+  0CE2   2DC0           	RET
+                        ; }
+                        ; testFunc() {
+  0CE4                  	EVEN
+                        testFunc:
+                        ;     int result;
+                        ;     result= add(3, 4);
+                        ;modstk(newsp,save)
+  0CE4   064A           	DECT SP
+                        ;const1(val)
+  0CE6   0204 0003      	LI R4,3
+                        ;zpush()
+  0CEA   064A           	DECT SP
+  0CEC   C684           	MOV R4,*SP
+                        ;const1(val)
+  0CEE   0204 0004      	LI R4,4
+                        ;zpush()
+  0CF2   064A           	DECT SP
+  0CF4   C684           	MOV R4,*SP
+                        ;zcall()
+  0CF6   2DA0 0CCA      	CALL @add
+                        ;modstk(newsp,save)
+  0CFA   022A 0004      	AI SP,4
+                        ;puttos()
+  0CFE   C684           	MOV R4,*SP
+                        ;     printf("Function Calls Result: %d\n", result);
+                        ;constant(lval)
+  0D00   0204 0D28      	LI R4,cc39+0
+                        ;zpush()
+  0D04   064A           	DECT SP
+  0D06   C684           	MOV R4,*SP
+                        ;getloc(sym, off)
+  0D08   0204 0002      	LI  R4,2
+  0D0C   A10A           	A  SP,R4
+                        ;indirect ccgint
+  0D0E   C114           	MOV *R4,R4
+                        ;zpush()
+  0D10   064A           	DECT SP
+  0D12   C684           	MOV R4,*SP
+                        ;loadarg(n)
+  0D14   0201 0002      	LI R1,2
+  0D18   06A0 0CAC      	BL @_setargc##
+                        ;zcall()
+  0D1C   2DA0 0CB0      	CALL @printf
+                        ;modstk(newsp,save)
+  0D20   022A 0004      	AI SP,4
+                        ; }
+                        ;modstk(newsp,save)
+  0D24   05CA           	INCT SP
+                        ;modstk(newsp,save)
+  0D26   2DC0           	RET
+  0D28   4675 6E63      cc39:	BYTE 70,117,110,99,116,105,111,110,32,67,97,108
+  0D2C   7469 6F6E      
+  0D30   2043 616C      
+  0D34   6C73 2052      	BYTE 108,115,32,82,101,115,117,108,116,58,32,37
+  0D38   6573 756C      
+  0D3C   743A 2025      
+  0D40   640D 00        	BYTE 100,13,0
+  0D43   00             	EVEN
+                        ; // Pointer Operations
+                        ;  testPointer() {
+  0D44                  	EVEN
+                        testPointer:
+                        ;     int x;
+                        ;     int *ptr;
+                        ;     x = 10;
+                        ;modstk(newsp,save)
+  0D44   022A FFFC      	AI SP,-4
+                        ;const1(val)
+  0D48   0204 000A      	LI R4,10
+                        ;put2tos()
+  0D4C   CA84 0002      	MOV R4,@2(SP)
+                        ;     *ptr = &x;
+                        ;getloc(sym, off)
+  0D50   C10A           	MOV SP,R4
+                        ;indirect ccgint
+  0D52   C114           	MOV *R4,R4
+                        ;zpush()
+  0D54   064A           	DECT SP
+  0D56   C684           	MOV R4,*SP
+                        ;getloc(sym, off)
+  0D58   0204 0004      	LI  R4,4
+  0D5C   A10A           	A  SP,R4
+                        ;zpop()
+  0D5E   C0FA           	MOV *SP+,R3
+                        ;putstk - int
+  0D60   C4C4           	MOV R4,*R3
+                        ;     printf("Pointer Operations: Value of x: %x\n", *ptr);
+                        ;constant(lval)
+  0D62   0204 0D8E      	LI R4,cc40+0
+                        ;zpush()
+  0D66   064A           	DECT SP
+  0D68   C684           	MOV R4,*SP
+                        ;getloc(sym, off)
+  0D6A   0204 0002      	LI  R4,2
+  0D6E   A10A           	A  SP,R4
+                        ;indirect ccgint
+  0D70   C114           	MOV *R4,R4
+                        ;indirect ccgint
+  0D72   C114           	MOV *R4,R4
+                        ;zpush()
+  0D74   064A           	DECT SP
+  0D76   C684           	MOV R4,*SP
+                        ;loadarg(n)
+  0D78   0201 0002      	LI R1,2
+  0D7C   06A0 0D1A      	BL @_setargc##
+                        ;zcall()
+  0D80   2DA0 0D1E      	CALL @printf
+                        ;modstk(newsp,save)
+  0D84   022A 0004      	AI SP,4
+                        ; }
+                        ;modstk(newsp,save)
+  0D88   022A 0004      	AI SP,4
+                        ;modstk(newsp,save)
+  0D8C   2DC0           	RET
+  0D8E   506F 696E      cc40:	BYTE 80,111,105,110,116,101,114,32,79,112,101,114
+  0D92   7465 7220      
+  0D96   4F70 6572      
+  0D9A   6174 696F      	BYTE 97,116,105,111,110,115,58,32,86,97,108,117
+  0D9E   6E73 3A20      
+  0DA2   5661 6C75      
+  0DA6   6520 6F66      	BYTE 101,32,111,102,32,120,58,32,37,120,13,0
+  0DAA   2078 3A20      
+  0DAE   2578 0D00      
+                        ; // Memory Allocation
+                        ;  testMemAll() {
+  0DB2                  	EVEN
+                        testMemAll:
+                        ;     int *ptr;
+                        ;     //*ptr = (int *)malloc(sizeof(int));
+                        ;     *ptr = 5;
+                        ;modstk(newsp,save)
+  0DB2   064A           	DECT SP
+                        ;getloc(sym, off)
+  0DB4   C10A           	MOV SP,R4
+                        ;indirect ccgint
+  0DB6   C114           	MOV *R4,R4
+                        ;zpush()
+  0DB8   064A           	DECT SP
+  0DBA   C684           	MOV R4,*SP
+                        ;const1(val)
+  0DBC   0204 0005      	LI R4,5
+                        ;zpop()
+  0DC0   C0FA           	MOV *SP+,R3
+                        ;putstk - int
+  0DC2   C4C4           	MOV R4,*R3
+                        ;     printf("Memory Allocation: Value of ptr: %d\n", *ptr);
+                        ;constant(lval)
+  0DC4   0204 0DFC      	LI R4,cc41+0
+                        ;zpush()
+  0DC8   064A           	DECT SP
+  0DCA   C684           	MOV R4,*SP
+                        ;getloc(sym, off)
+  0DCC   0204 0002      	LI  R4,2
+  0DD0   A10A           	A  SP,R4
+                        ;indirect ccgint
+  0DD2   C114           	MOV *R4,R4
+                        ;indirect ccgint
+  0DD4   C114           	MOV *R4,R4
+                        ;zpush()
+  0DD6   064A           	DECT SP
+  0DD8   C684           	MOV R4,*SP
+                        ;loadarg(n)
+  0DDA   0201 0002      	LI R1,2
+  0DDE   06A0 0D7E      	BL @_setargc##
+                        ;zcall()
+  0DE2   2DA0 0D82      	CALL @printf
+                        ;modstk(newsp,save)
+  0DE6   022A 0004      	AI SP,4
+                        ;     free(ptr);
+                        ;getloc(sym, off)
+  0DEA   C10A           	MOV SP,R4
+                        ;indirect ccgint
+  0DEC   C114           	MOV *R4,R4
+                        ;zpush()
+  0DEE   064A           	DECT SP
+  0DF0   C684           	MOV R4,*SP
+                        ;zcall()
+  0DF2   2DA0 0000      	CALL @free
+                        ;modstk(newsp,save)
+  0DF6   05CA           	INCT SP
+                        ; }
+                        ;modstk(newsp,save)
+  0DF8   05CA           	INCT SP
+                        ;modstk(newsp,save)
+  0DFA   2DC0           	RET
+  0DFC   4D65 6D6F      cc41:	BYTE 77,101,109,111,114,121,32,65,108,108,111,99
+  0E00   7279 2041      
+  0E04   6C6C 6F63      
+  0E08   6174 696F      	BYTE 97,116,105,111,110,58,32,86,97,108,117,101
+  0E0C   6E3A 2056      
+  0E10   616C 7565      
+  0E14   206F 6620      	BYTE 32,111,102,32,112,116,114,58,32,37,100,13
+  0E18   7074 723A      
+  0E1C   2025 640D      
+  0E20   00             	BYTE 0
+  0E21   00             	EVEN
+                        ; // Additional Logical Tests
+                        ;  testLogical() {
+  0E22                  	EVEN
+                        testLogical:
+                        ;     int a;
+                        ;     int b;
+                        ;     a= 5; b= 3;
+                        ;modstk(newsp,save)
+  0E22   022A FFFC      	AI SP,-4
+                        ;const1(val)
+  0E26   0204 0005      	LI R4,5
+                        ;put2tos()
+  0E2A   CA84 0002      	MOV R4,@2(SP)
+                        ;const1(val)
+  0E2E   0204 0003      	LI R4,3
+                        ;puttos()
+  0E32   C684           	MOV R4,*SP
+                        ;     printf("Logical Operations: a >= b: %d\n", a >= b);
+                        ;constant(lval)
+  0E34   0204 0F12      	LI R4,cc42+0
+                        ;zpush()
+  0E38   064A           	DECT SP
+  0E3A   C684           	MOV R4,*SP
+                        ;getloc(sym, off)
+  0E3C   0204 0004      	LI  R4,4
+  0E40   A10A           	A  SP,R4
+                        ;indirect ccgint
+  0E42   C114           	MOV *R4,R4
+                        ;zpush()
+  0E44   064A           	DECT SP
+  0E46   C684           	MOV R4,*SP
+                        ;getloc(sym, off)
+  0E48   0204 0004      	LI  R4,4
+  0E4C   A10A           	A  SP,R4
+                        ;indirect ccgint
+  0E4E   C114           	MOV *R4,R4
+                        ;zpop()
+  0E50   C0FA           	MOV *SP+,R3
+                        ;_ccge
+  0E52   06A0 0000      	BL @_ccge##
+                        ;zpush()
+  0E56   064A           	DECT SP
+  0E58   C684           	MOV R4,*SP
+                        ;loadarg(n)
+  0E5A   0201 0002      	LI R1,2
+  0E5E   06A0 0DE0      	BL @_setargc##
+                        ;zcall()
+  0E62   2DA0 0DE4      	CALL @printf
+                        ;modstk(newsp,save)
+  0E66   022A 0004      	AI SP,4
+                        ;     printf("Logical Operations: a <= b: %d\n", a <= b);
+                        ;constant(lval)
+  0E6A   0204 0F32      	LI R4,cc42+32
+                        ;zpush()
+  0E6E   064A           	DECT SP
+  0E70   C684           	MOV R4,*SP
+                        ;getloc(sym, off)
+  0E72   0204 0004      	LI  R4,4
+  0E76   A10A           	A  SP,R4
+                        ;indirect ccgint
+  0E78   C114           	MOV *R4,R4
+                        ;zpush()
+  0E7A   064A           	DECT SP
+  0E7C   C684           	MOV R4,*SP
+                        ;getloc(sym, off)
+  0E7E   0204 0004      	LI  R4,4
+  0E82   A10A           	A  SP,R4
+                        ;indirect ccgint
+  0E84   C114           	MOV *R4,R4
+                        ;zpop()
+  0E86   C0FA           	MOV *SP+,R3
+                        ;_ccle
+  0E88   06A0 0000      	BL @_ccle##
+                        ;zpush()
+  0E8C   064A           	DECT SP
+  0E8E   C684           	MOV R4,*SP
+                        ;loadarg(n)
+  0E90   0201 0002      	LI R1,2
+  0E94   06A0 0E60      	BL @_setargc##
+                        ;zcall()
+  0E98   2DA0 0E64      	CALL @printf
+                        ;modstk(newsp,save)
+  0E9C   022A 0004      	AI SP,4
+                        ;     printf("Logical Operations: a == b: %d\n", a == b);
+                        ;constant(lval)
+  0EA0   0204 0F52      	LI R4,cc42+64
+                        ;zpush()
+  0EA4   064A           	DECT SP
+  0EA6   C684           	MOV R4,*SP
+                        ;getloc(sym, off)
+  0EA8   0204 0004      	LI  R4,4
+  0EAC   A10A           	A  SP,R4
+                        ;indirect ccgint
+  0EAE   C114           	MOV *R4,R4
+                        ;zpush()
+  0EB0   064A           	DECT SP
+  0EB2   C684           	MOV R4,*SP
+                        ;getloc(sym, off)
+  0EB4   0204 0004      	LI  R4,4
+  0EB8   A10A           	A  SP,R4
+                        ;indirect ccgint
+  0EBA   C114           	MOV *R4,R4
+                        ;zpop()
+  0EBC   C0FA           	MOV *SP+,R3
+                        ;_cceq
+  0EBE   06A0 0000      	BL @_cceq##
+                        ;zpush()
+  0EC2   064A           	DECT SP
+  0EC4   C684           	MOV R4,*SP
+                        ;loadarg(n)
+  0EC6   0201 0002      	LI R1,2
+  0ECA   06A0 0E96      	BL @_setargc##
+                        ;zcall()
+  0ECE   2DA0 0E9A      	CALL @printf
+                        ;modstk(newsp,save)
+  0ED2   022A 0004      	AI SP,4
+                        ;     printf("Logical Operations: a != b: %d\n", a != b);
+                        ;constant(lval)
+  0ED6   0204 0F72      	LI R4,cc42+96
+                        ;zpush()
+  0EDA   064A           	DECT SP
+  0EDC   C684           	MOV R4,*SP
+                        ;getloc(sym, off)
+  0EDE   0204 0004      	LI  R4,4
+  0EE2   A10A           	A  SP,R4
+                        ;indirect ccgint
+  0EE4   C114           	MOV *R4,R4
+                        ;zpush()
+  0EE6   064A           	DECT SP
+  0EE8   C684           	MOV R4,*SP
+                        ;getloc(sym, off)
+  0EEA   0204 0004      	LI  R4,4
+  0EEE   A10A           	A  SP,R4
+                        ;indirect ccgint
+  0EF0   C114           	MOV *R4,R4
+                        ;zpop()
+  0EF2   C0FA           	MOV *SP+,R3
+                        ;_ccne
+  0EF4   06A0 0000      	BL @_ccne##
+                        ;zpush()
+  0EF8   064A           	DECT SP
+  0EFA   C684           	MOV R4,*SP
+                        ;loadarg(n)
+  0EFC   0201 0002      	LI R1,2
+  0F00   06A0 0ECC      	BL @_setargc##
+                        ;zcall()
+  0F04   2DA0 0ED0      	CALL @printf
+                        ;modstk(newsp,save)
+  0F08   022A 0004      	AI SP,4
+                        ; }
+                        ;modstk(newsp,save)
+  0F0C   022A 0004      	AI SP,4
+                        ;modstk(newsp,save)
+  0F10   2DC0           	RET
+  0F12   4C6F 6769      cc42:	BYTE 76,111,103,105,99,97,108,32,79,112,101,114
+  0F16   6361 6C20      
+  0F1A   4F70 6572      
+  0F1E   6174 696F      	BYTE 97,116,105,111,110,115,58,32,97,32,62,61
+  0F22   6E73 3A20      
+  0F26   6120 3E3D      
+  0F2A   2062 3A20      	BYTE 32,98,58,32,37,100,13,0,76,111,103,105
+  0F2E   2564 0D00      
+  0F32   4C6F 6769      
+  0F36   6361 6C20      	BYTE 99,97,108,32,79,112,101,114,97,116,105,111
+  0F3A   4F70 6572      
+  0F3E   6174 696F      
+  0F42   6E73 3A20      	BYTE 110,115,58,32,97,32,60,61,32,98,58,32
+  0F46   6120 3C3D      
+  0F4A   2062 3A20      
+  0F4E   2564 0D00      	BYTE 37,100,13,0,76,111,103,105,99,97,108,32
+  0F52   4C6F 6769      
+  0F56   6361 6C20      
+  0F5A   4F70 6572      	BYTE 79,112,101,114,97,116,105,111,110,115,58,32
+  0F5E   6174 696F      
+  0F62   6E73 3A20      
+  0F66   6120 3D3D      	BYTE 97,32,61,61,32,98,58,32,37,100,13,0
+  0F6A   2062 3A20      
+  0F6E   2564 0D00      
+  0F72   4C6F 6769      	BYTE 76,111,103,105,99,97,108,32,79,112,101,114
+  0F76   6361 6C20      
+  0F7A   4F70 6572      
+  0F7E   6174 696F      	BYTE 97,116,105,111,110,115,58,32,97,32,33,61
+  0F82   6E73 3A20      
+  0F86   6120 213D      
+  0F8A   2062 3A20      	BYTE 32,98,58,32,37,100,13,0
+  0F8E   2564 0D00      
+                        	EXT atan
+                        	EXT getc
+                        	ENT testFunc
+                        	EXT fmod
+                        	EXT free
+                        	EXT ifix
+                        	ENT main
+                        	ENT testLogical
+                        	ENT testArith
+                        	EXT log10
+                        	ENT q_i
+                        	ENT q_j
+                        	ENT q_k
+                        	ENT q_l
+                        	ENT q_m
+                        	ENT q_n
+                        	ENT fp2string
+                        	EXT putc
+                        	EXT puts
+                        	ENT ftoa2
+                        	ENT add
+                        	EXT float
+                        	EXT sqrt
+                        	EXT floor
+                        	EXT fopen
+                        	EXT cos
+                        	EXT exp
+                        	EXT log
+                        	EXT tan
+                        	EXT sin
+                        	EXT pow
+                        	ENT testMemAll
+                        	ENT testControl
+                        	ENT testArrays
+                        	EXT fclose
+                        	EXT printf
+                        	ENT upper
+                        	EXT fabs
+                        	ENT testPointer
+  0F92                  	EVEN
+  0F92                  	END
 
-;* * *  Small-C/Plus Version 1.06a for the TMS 9900  * * *
-;       Cain, Van Zandt, Hendrix, Yorston, Cameron
-;          Original Z80 Version 21st April 1990       
-;
-R0	EQU 0
-R1	EQU 1
-R2	EQU 2
-R3	EQU 3
-R4	EQU 4
-R8	EQU 8
-SL	EQU 9
-SP	EQU 10
-WP	EQU 13
-R11	EQU 11
-	DXOP CALL,6
-	DXOP RET,7
-	DXOP PUSH,8
-	DXOP POP,9
-	DXOP WHEX,10
-	DXOP WRITE,12    ;WRITE CHAR IN MSB 
-	DXOP DEBUG,15    ;TRACE THE PRECEDING INSTRUCTION, PC,ST and REGISTERS 
-
-;-------- START MODULE -----------
-	STWP WP 
-;	B @_main## ; This calls iolib99 entry point
-;// #include "float.h"
-;char ch;
-ch:	BSS 1
-;main ()  {
-	EVEN
-main:
-;modstk(newsp,save)
-;	  int  aa;
-;	  char bb;
-;	 int c;
-;	 char ddd;
-;	 unsigned int a;
-;	 char b;
-;	 int fd;
-;	 ch = 3;
-;modstk(newsp,save)
-	MOVB @2*R4+1(WP),@ch
-	END
-
-	EXT getc
-	ENT main
-	EXT putc
-	EXT puts
-	EXT fopen
-	ENT ch
-	EXT fclose
-	EXT printf
-	EVEN
-	END
-
-; --- End of Compilation ---
+No error(s).
+_float    00E6*   sin       0248*   cc8       01CC'   cc5       00BE'
+putc      03DA*   q_n       000E'   puts      01B8*   fp2strin  09C2'
+WP        000D    _setargc  0F02*   _fpush2   00E0*   fabs      0000*
+testPoin  0D44'   _minusfa  064C*   cc40      0D8E'   cc3       012C'
+cc41      0DFC'   q_l       000C'   SL        0009    cc31      0B54'
+cc2       00A8'   cc32      0B6A'   WRITE     2F00'   cc30      0B6E'
+cc22      0770'   cc36      0C36'   cc23      086C'   cc34      0C50'
+cc26      0972'   cc37      0C64'   cc25      08BC'   cc39      0D28'
+testArit  0A98'   cc33      0CBA'   _cceq     0EC0*   cc35      0C9E'
+RET       2DC0'   R0        0000    cos       0000*   R2        0002 
+fopen     042A*   R1        0001    _fpmul    08F4*   R3        0003 
+ifix      090C*   R4        0004    _fpush    0950*   R8        0008 
+upper     0A76'   DEBUG     2FC0'   _ccle     0E8A*   _fpdiv    07EC*
+cc9       0206'   testArra  0BBE'   sqrt      0000*   cc1       04CE'
+log10     0000*   q_j       0008'   cc7       027E'   _fpswap   00EA*
+tan       0000*   cc12      02CA'   cc6       01EC'   cc10      02EC'
+q_m       000D'   cc13      0304'   add       0CCA'   cc14      0354'
+q_k       000A'   cc17      0654'   cc21      0770'   cc11      0370'
+cc29      0AFA'   cc15      0358'   q_i       0006'   cc16      098C'
+CALL      2D80'   cc18      0678'   _fpsub    0966*   cc19      06BC'
+pow       0000*   _fpge     072A*   _ccge     0E54*   getc      0470*
+R11       000B    printf    0F06*   testLogi  0E22'   atan      0000*
+free      0DF4*   testCont  0B1C'   cc42      0F12'   float     0960*
+cc20      0710'   testMemA  0DB2'   cc27      0A66'   testFunc  0CE4'
+main      0010'   floor     07C6*   ftoa2     05EE'   exp       0000*
+WHEX      2E80'   _main     0004*   cc4       0088'   fmod      0000*
+cc24      089A'   log       0000*   POP       2E40'   PUSH      2E00'
+_fpadd    07BE*   _ccne     0EF6*   SP        000A    fclose    04AE*
+_fplt     060A*   _fload    094C*   _fstore   096C*
+
