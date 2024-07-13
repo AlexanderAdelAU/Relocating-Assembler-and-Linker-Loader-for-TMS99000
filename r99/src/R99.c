@@ -3,8 +3,7 @@
 
  May, 1980
 
- Copyright (c) 1980 William C. Colley, III M6800 version
- Relocating TNS9900 version by Alex Cameron 1985
+ Copyright (c) 1980 William C. Colley, III.
 
  File:	r99.c
 
@@ -26,7 +25,7 @@ main(short int argc, char *argv[]) {
 	putls("\n---------------------------------------------");
 	putls("\nTMS9900 Relocatable Cross-Assembler  vers 1.0\n");
 	putls("Copyright (c) 1980  William C. Colley, III\n");
-	putls("(TMS 99105A version by Alexander.  May 2015 )\n");
+	putls("(TMS 99105A version by Alexander. Cameron Jan 1984 and May 2015 )\n");
 	putls("---------------------------------------------\n");
 	setfiles(argc, argv);
 
@@ -93,16 +92,17 @@ main(short int argc, char *argv[]) {
 	if (lstbuf.fd != NOFILE) /*  If needed, sort and list
 	 symbol table.		*/
 	{
-	/*	n = sortsym(NOSORT); */
-		n = nssymbols;
+		n = sortsym(SORT);
+
+	//	n = nssymbols;
 		sympoint = symtbl;
 		while (n > 0) {
 			linptr = linbuf;
 			for (m = 0; m < 4; m++) {
 				memcpy(linptr, sympoint->symname, SYMLEN);
-				linptr += 8;
+				linptr += SYMLEN;
 				*linptr++ = ' ';
-				*linptr++ = ' ';
+				//*linptr++ = ' ';
 				puthex4(sympoint->symvalu, &linptr);
 				if (sympoint->symflg & EXTBIT)
 					*linptr++ = '*'; /* mark external */
@@ -110,14 +110,14 @@ main(short int argc, char *argv[]) {
 					*linptr++ = '\''; /* mark relocatable */
 				else
 					*linptr++ = ' ';
-				*linptr++ = ' ';
-				*linptr++ = ' ';
+				//*linptr++ = ' ';
+				//*linptr++ = ' ';
 				*linptr++ = ' ';
 				sympoint++;
 				if (--n <= 0)
 					break;
 			}
-			linptr -= 3;
+			linptr -= 4;
 			*linptr++ = '\n';
 			*linptr = '\0';
 			putlin(linbuf, &lstbuf);
