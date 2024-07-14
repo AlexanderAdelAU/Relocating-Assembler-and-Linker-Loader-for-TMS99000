@@ -99,7 +99,7 @@ main(short int argc, char *argv[]) {
 		while (n > 0) {
 			linptr = linbuf;
 			for (m = 0; m < 4; m++) {
-				memcpy(linptr, sympoint->symname, SYMLEN);
+				memcpy(linptr, sympoint->symname, SYMLEN-1); /* Not sure why this works */
 				linptr += SYMLEN;
 				*linptr++ = ' ';
 				//*linptr++ = ' ';
