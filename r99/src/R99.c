@@ -94,13 +94,13 @@ main(short int argc, char *argv[]) {
 	{
 		n = sortsym(SORT);
 
-	//	n = nssymbols;
-		sympoint = symtbl;
+		n = nssymbols;
+	/*	sympoint = symtbl; */
 		while (n > 0) {
 			linptr = linbuf;
 			for (m = 0; m < 4; m++) {
 				memcpy(linptr, sympoint->symname, SYMLEN); 
-				linptr += SYMLEN-1; /* Not sure why this works */
+				linptr += SYMLEN;
 				*linptr++ = ' ';
 				//*linptr++ = ' ';
 				puthex4(sympoint->symvalu, &linptr);
