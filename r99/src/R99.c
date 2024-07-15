@@ -92,10 +92,10 @@ main(short int argc, char *argv[]) {
 	if (lstbuf.fd != NOFILE) /*  If needed, sort and list
 	 symbol table.		*/
 	{
-		n = sortsym(SORT);
+		/* n = sortsym(SORT); */
 
 		n = nssymbols;
-	/*	sympoint = symtbl; */
+		sympoint = symtbl; 
 		while (n > 0) {
 			linptr = linbuf;
 			for (m = 0; m < 4; m++) {
