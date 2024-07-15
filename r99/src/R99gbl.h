@@ -25,16 +25,16 @@
  *
  */
 
-#define	SYMLEN	12	/*  Length of labels (must be an even number).	*/
-#define	SYMBOLS	809	/*  Number of symbols in symbol table.(prime no)*/
-#define	PADDING	"         "	/*  SYMLEN - 1 blanks.			*/
-#define ENTBIT 4	/* Sets ENTRY bit in symflg 			*/
-#define EQUBIT 16	/* Equivalence - defined via an equate 		*/
-#define DUPBIT 32	/* Equivalence - defined via an equate 		*/
-#define EXTBIT 8	/* Sets EXTERNAL bit in symflg			*/
-#define	DEFBIT	2	/* Sets DEFINED bit				*/
-#define RELBIT 1	/* Sets RELOCATION bit in symflg		*/
-#define COMBIT 12	/* Sets COMMON bits in symflg			*/
+#define	SYMLEN	12		/*  Length of labels (must be an even number).	*/
+#define	SYMBOLS	809		/*  Number of symbols in symbol table.(prime no)*/
+#define	PADDING	"           "	/*  SYMLEN - 1 blanks.			*/
+#define ENTBIT 4		/* Sets ENTRY bit in symflg 			*/
+#define EQUBIT 16		/* Equivalence - defined via an equate 		*/
+#define DUPBIT 32		/* Equivalence - defined via an equate 		*/
+#define EXTBIT 8		/* Sets EXTERNAL bit in symflg			*/
+#define	DEFBIT	2		/* Sets DEFINED bit				*/
+#define RELBIT 1		/* Sets RELOCATION bit in symflg		*/
+#define COMBIT 12		/* Sets COMMON bits in symflg			*/
 
 /*  Number of if statements that can be nested:  */
 
