@@ -5,7 +5,7 @@
 
 
  Original 6800 version Copyright (c) 1980 William C. Colley, III.
- Modified for the TMS9900/99105  Series and made relocatable by Alexander Cameron.
+ Modified for the TMS9900/99105  Series by Alexander Cameron.
 
 
 
@@ -252,7 +252,8 @@ void _psop(unsigned short opcode, char *label) {
 				cflag = TRUE;
 				t = eval(START);
 				/* REL Code */
-				if (itemflg[0] & RELBIT) {
+
+				if ((itemflg[0] & RELBIT) || relflg) {  /* relflg Added 14/11/2024 so WORD &+2 (point) works */
 					item = PREL;
 					field = t;
 					putrel();
@@ -262,6 +263,7 @@ void _psop(unsigned short opcode, char *label) {
 					putabs2();
 				}
 				itemflg[0] = 0; /* clear for next item */
+				relflg = FALSE;
 				*bptr++ = t >> 8;
 				*bptr++ = t;
 				nbytes += 2;
