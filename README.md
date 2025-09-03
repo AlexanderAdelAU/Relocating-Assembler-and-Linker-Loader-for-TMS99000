@@ -14,7 +14,7 @@ The Assembler is invoked using the following syntax
 
 The linker loader which takes the .R99 (object modules) and .LIB files will produce the executable .COM file by resolving all the external references either within the .R99 or .LIB files.
 
-The Linker is invoked using the following syntax.  In this example cTest99 will linked with abc.r99, clib99.LIB and iolib99.LIB library files to produce the cTest99.com executable file.   This file can be targetted to load anywhere in memory, but is normally loaded at location 0x0100H.
+The Linker is invoked using the following syntax.  In this example cTest99 will linked with abc.r99, clib99.LIB and iolib99.LIB library files to produce the cTest99.com executable file.   This file can be targetted to load anywhere in memory, but is normally loaded at location 0x0500H in my implementation.
 
 ***link99  -M  -S cTest99 clib99.LIB iolib99.LIB*** in the case where libraries are needed, or
 
