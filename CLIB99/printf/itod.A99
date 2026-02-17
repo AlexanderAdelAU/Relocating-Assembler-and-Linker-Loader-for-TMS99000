@@ -1,0 +1,787 @@
+;* * *  Small-C/Plus Version 1.06a for the TMS 9900 - Cameron * * *
+;       Cain, Van Zandt, Hendrix, Yorston, Cameron
+;          Original Z80  Version 21st April 1990       
+;
+R0	EQU 0
+R1	EQU 1
+R2	EQU 2
+R3	EQU 3
+R4	EQU 4
+R8	EQU 8
+SL	EQU 9
+SP	EQU 10
+WP	EQU 13
+R11	EQU 11
+	DXOP CALL,6
+	DXOP RET,7
+	DXOP WHEX,10
+	DXOP WRITE,12    ;WRITE CHAR IN MSB 
+	DXOP DEBUG,15    ;TRACE THE PRECEDING INSTRUCTION, PC,ST and REGISTERS 
+
+;-------- START MODULE -----------
+	NAM printf\itod
+	NOP; Required to terminate link chain with non zero for global variables
+;/*
+; * itod -- convert nbr to signed decimal string of width sz
+; *	       right adjusted, blank filled ; returns str
+; *
+; *	      if sz > 0 terminate with null byte
+; *	      if sz  =  0 find end of string
+; *	      if sz < 0 use last byte for data
+; */
+;#include "stdio.h"
+;/*
+;** STDIO.H -- Standard Small-C Definitions
+;**
+;** Copyright 1984  L. E. Payne and J. E. Hendrix
+;*/
+;#define stdin    0
+;#define stdout   1
+;#define stderr   2
+;#define ERR   (-2)
+;#define EOF   (-1)
+;#define YES      1
+;#define NO       0
+;#define NULL     0
+;#define CR      0x0D /* '\r' */
+;#define LF      0x0A /* '\n' */
+;#define BELL     7
+;#define SPACE  ' '
+;#define NEWLINE LF      /*23*/ /*45*/
+;#define FILE char
+;/*
+; * itod -- convert nbr to signed decimal string of width sz
+; *	       right adjusted, blank filled ; returns str
+; *
+; *	      if sz > 0 terminate with null byte
+; *	      if sz  =  0 find end of string
+; *	      if sz < 0 use last byte for data
+; */
+;itod(nbr, str, sz)
+	EVEN
+itod:
+;	int nbr; char str[]; int sz; {
+;modstk(newsp,save)
+;	char sgn;
+;	int i;
+;	int minval;
+;	minval = 0x8000;  /* -32768 in 16-bit two's complement */
+;modstk(newsp,save)
+	AI SP,-6
+	LI R4,32768
+;puttos()
+	MOV R4,*SP
+;	if (nbr == minval) {
+;getloc(sym, off)
+	LI R4,12
+	A SP,R4
+;indirect ccgint
+	MOV *R4,R4
+	DECT SP
+	MOV R4,*SP
+;getloc(sym, off)
+	LI R4,2
+	A SP,R4
+;indirect ccgint
+	MOV *R4,R4
+	MOV *SP+,R3
+;_cceq
+	C R3,R4;optimised
+	JEQ $+6
+	B @cc2
+;		/* Special case: avoid negating -32768 */
+;		str[0] = '-';
+;modstk(newsp,save)
+;getloc(sym, off)
+	LI R4,10
+	A SP,R4
+;indirect ccgint
+	MOV *R4,R3;optimised
+	LI R4,45
+;putstk - char
+	MOVB @2*R4+1(WP),*R3
+;		str[1] = '3';
+;getloc(sym, off)
+	LI R4,10
+	A SP,R4
+;indirect ccgint
+	MOV *R4,R4
+;inc()
+	INC R4
+	DECT SP
+	MOV R4,*SP
+	LI R4,51
+	MOV *SP+,R3
+;putstk - char
+	MOVB @2*R4+1(WP),*R3
+;		str[2] = '2';
+;getloc(sym, off)
+	LI R4,10
+	A SP,R4
+;indirect ccgint
+	MOV *R4,R4
+;inct()
+	INCT R4
+	DECT SP
+	MOV R4,*SP
+	LI R4,50
+	MOV *SP+,R3
+;putstk - char
+	MOVB @2*R4+1(WP),*R3
+;		str[3] = '7';
+;getloc(sym, off)
+	LI R4,10
+	A SP,R4
+;indirect ccgint
+	MOV *R4,R4
+;const2(val)
+	LI R3,3
+;	zadd()
+	A R3,R4
+	DECT SP
+	MOV R4,*SP
+	LI R4,55
+	MOV *SP+,R3
+;putstk - char
+	MOVB @2*R4+1(WP),*R3
+;		str[4] = '6';
+;getloc(sym, off)
+	LI R4,10
+	A SP,R4
+;indirect ccgint
+	MOV *R4,R4
+;const2(val)
+	LI R3,4
+;	zadd()
+	A R3,R4
+	DECT SP
+	MOV R4,*SP
+	LI R4,54
+	MOV *SP+,R3
+;putstk - char
+	MOVB @2*R4+1(WP),*R3
+;		str[5] = '8';
+;getloc(sym, off)
+	LI R4,10
+	A SP,R4
+;indirect ccgint
+	MOV *R4,R4
+;const2(val)
+	LI R3,5
+;	zadd()
+	A R3,R4
+	DECT SP
+	MOV R4,*SP
+	LI R4,56
+	MOV *SP+,R3
+;putstk - char
+	MOVB @2*R4+1(WP),*R3
+;		str[6] = '\0';
+;getloc(sym, off)
+	LI R4,10
+	A SP,R4
+;indirect ccgint
+	MOV *R4,R4
+;const2(val)
+	LI R3,6
+;	zadd()
+	A R3,R4
+	DECT SP
+	MOV R4,*SP
+	CLR R4
+	MOV *SP+,R3
+;putstk - char
+	MOVB @2*R4+1(WP),*R3
+;		/* Adjust spacing and width if needed */
+;		if (sz > 0) {
+;getloc(sym, off)
+	LI R4,8
+	A SP,R4
+;indirect ccgint
+	MOV *R4,R4
+;gt0(label)
+	MOV R4,R4
+	JGT $+6
+	B @cc3
+;			i = 7;
+;modstk(newsp,save)
+	LI R4,7
+;put2tos()
+	MOV R4,@2(SP)
+;			while (i < sz)
+cc4:
+;getloc(sym, off)
+	LI R4,2
+	A SP,R4
+;indirect ccgint
+	MOV *R4,R4
+	DECT SP
+	MOV R4,*SP
+;getloc(sym, off)
+	LI R4,10
+	A SP,R4
+;indirect ccgint
+	MOV *R4,R4
+	MOV *SP+,R3
+;_cclt
+	C R3,R4
+	JLT $+6
+	B @cc5
+;				str[i++] = ' ';
+;getloc(sym, off)
+	LI R4,10
+	A SP,R4
+;indirect ccgint
+	MOV *R4,R4
+	DECT SP
+	MOV R4,*SP
+;getloc(sym, off)
+	LI R4,4
+	A SP,R4
+	DECT SP
+	MOV R4,*SP
+;indirect ccgint
+	MOV *R4,R4
+;inc()
+	INC R4
+	MOV *SP+,R3
+;putstk - int
+	MOV R4,*R3
+;	dec()
+	DEC R4
+;scale(type,tag)
+	MOV *SP+,R3
+;	zadd()
+	A R3,R4
+	DECT SP
+	MOV R4,*SP
+	LI R4,32
+	MOV *SP+,R3
+;putstk - char
+	MOVB @2*R4+1(WP),*R3
+;jump(label)
+	B @cc4
+cc5:
+;			str[sz] = '\0';
+;getloc(sym, off)
+	LI R4,10
+	A SP,R4
+;indirect ccgint
+	MOV *R4,R4
+	DECT SP
+	MOV R4,*SP
+;getloc(sym, off)
+	LI R4,10
+	A SP,R4
+;indirect ccgint
+	MOV *R4,R4
+;scale(type,tag)
+	MOV *SP+,R3
+;	zadd()
+	A R3,R4
+	DECT SP
+	MOV R4,*SP
+	CLR R4
+	MOV *SP+,R3
+;putstk - char
+	MOVB @2*R4+1(WP),*R3
+;		}
+;modstk(newsp,save)
+;		return str;
+cc3:
+;getloc(sym, off)
+	LI R4,10
+	A SP,R4
+;indirect ccgint
+	MOV *R4,R4
+;modstk(newsp,save)
+	AI SP,6
+	RET
+;	}
+;	if (nbr < 0) {
+cc2:
+;getloc(sym, off)
+	LI R4,12
+	A SP,R4
+;indirect ccgint
+	MOV *R4,R4
+;lt0(label)
+	MOV R4,R4
+	JLT $+6
+	B @cc6
+;		sgn = '-';
+;modstk(newsp,save)
+;getloc(sym, off)
+;Char offset
+	LI R4,5
+	A SP,R4
+	DECT SP
+	MOV R4,*SP
+	LI R4,45
+	MOV *SP+,R3
+;putstk - char
+	MOVB @2*R4+1(WP),*R3
+;		nbr = -nbr;
+;getloc(sym, off)
+	LI R4,12
+	A SP,R4
+	DECT SP
+	MOV R4,*SP
+;getloc(sym, off)
+	LI R4,14
+	A SP,R4
+;indirect ccgint
+	MOV *R4,R4
+;neg()
+	NEG R4
+	MOV *SP+,R3
+;putstk - int
+	MOV R4,*R3
+;	} else {
+;modstk(newsp,save)
+;jump(label)
+	B @cc7
+cc6:
+;		sgn = ' ';
+;modstk(newsp,save)
+;getloc(sym, off)
+;Char offset
+	LI R4,5
+	A SP,R4
+	DECT SP
+	MOV R4,*SP
+	LI R4,32
+	MOV *SP+,R3
+;putstk - char
+	MOVB @2*R4+1(WP),*R3
+;	}
+;modstk(newsp,save)
+cc7:
+;	if (sz > 0) {
+;getloc(sym, off)
+	LI R4,8
+	A SP,R4
+;indirect ccgint
+	MOV *R4,R4
+;gt0(label)
+	MOV R4,R4
+	JGT $+6
+	B @cc8
+;		str[--sz] = '\0';
+;modstk(newsp,save)
+;getloc(sym, off)
+	LI R4,10
+	A SP,R4
+;indirect ccgint
+	MOV *R4,R4
+	DECT SP
+	MOV R4,*SP
+;getloc(sym, off)
+	LI R4,10
+	A SP,R4
+	DECT SP
+	MOV R4,*SP
+;indirect ccgint
+	MOV *R4,R4
+;	dec()
+	DEC R4
+	MOV *SP+,R3
+;putstk - int
+	MOV R4,*R3
+;scale(type,tag)
+	MOV *SP+,R3
+;	zadd()
+	A R3,R4
+	DECT SP
+	MOV R4,*SP
+	CLR R4
+	MOV *SP+,R3
+;putstk - char
+	MOVB @2*R4+1(WP),*R3
+;	} else if (sz < 0) {
+;modstk(newsp,save)
+;jump(label)
+	B @cc9
+cc8:
+;getloc(sym, off)
+	LI R4,8
+	A SP,R4
+;indirect ccgint
+	MOV *R4,R4
+;lt0(label)
+	MOV R4,R4
+	JLT $+6
+	B @cc10
+;		sz = -sz;
+;modstk(newsp,save)
+;getloc(sym, off)
+	LI R4,8
+	A SP,R4
+	DECT SP
+	MOV R4,*SP
+;getloc(sym, off)
+	LI R4,10
+	A SP,R4
+;indirect ccgint
+	MOV *R4,R4
+;neg()
+	NEG R4
+	MOV *SP+,R3
+;putstk - int
+	MOV R4,*R3
+;	} else {
+;modstk(newsp,save)
+;jump(label)
+	B @cc11
+cc10:
+;		while (str[sz] != '\0') {
+;modstk(newsp,save)
+cc12:
+;getloc(sym, off)
+	LI R4,10
+	A SP,R4
+;indirect ccgint
+	MOV *R4,R4
+	DECT SP
+	MOV R4,*SP
+;getloc(sym, off)
+	LI R4,10
+	A SP,R4
+;indirect ccgint
+	MOV *R4,R4
+;scale(type,tag)
+	MOV *SP+,R3
+;	zadd()
+	A R3,R4
+;indirect ccgchar
+	MOVB *R4,R4
+	SRA R4,8
+	MOV R4,R4
+	JNE $+6
+	B @cc13
+;			++sz;
+;modstk(newsp,save)
+;getloc(sym, off)
+	LI R4,8
+	A SP,R4
+	DECT SP
+	MOV R4,*SP
+;indirect ccgint
+	MOV *R4,R4
+;inc()
+	INC R4
+	MOV *SP+,R3
+;putstk - int
+	MOV R4,*R3
+;		}
+;modstk(newsp,save)
+;jump(label)
+	B @cc12
+cc13:
+;	}
+;modstk(newsp,save)
+cc11:
+cc9:
+;	i = sz;
+;getloc(sym, off)
+	LI R4,8
+	A SP,R4
+;indirect ccgint
+	MOV *R4,R4
+;put2tos()
+	MOV R4,@2(SP)
+;	if (nbr == 0) {
+;getloc(sym, off)
+	LI R4,12
+	A SP,R4
+;indirect ccgint
+	MOV *R4,R4
+	MOV R4,R4
+	JEQ $+6
+	B @cc14
+;		if (i > 0) {
+;modstk(newsp,save)
+;getloc(sym, off)
+	LI R4,2
+	A SP,R4
+;indirect ccgint
+	MOV *R4,R4
+;gt0(label)
+	MOV R4,R4
+	JGT $+6
+	B @cc15
+;			str[--i] = '0';
+;modstk(newsp,save)
+;getloc(sym, off)
+	LI R4,10
+	A SP,R4
+;indirect ccgint
+	MOV *R4,R4
+	DECT SP
+	MOV R4,*SP
+;getloc(sym, off)
+	LI R4,4
+	A SP,R4
+	DECT SP
+	MOV R4,*SP
+;indirect ccgint
+	MOV *R4,R4
+;	dec()
+	DEC R4
+	MOV *SP+,R3
+;putstk - int
+	MOV R4,*R3
+;scale(type,tag)
+	MOV *SP+,R3
+;	zadd()
+	A R3,R4
+	DECT SP
+	MOV R4,*SP
+	LI R4,48
+	MOV *SP+,R3
+;putstk - char
+	MOVB @2*R4+1(WP),*R3
+;		}
+;modstk(newsp,save)
+;	} else {
+cc15:
+;modstk(newsp,save)
+;jump(label)
+	B @cc16
+cc14:
+;		while (nbr && i > 0) {
+;modstk(newsp,save)
+cc17:
+;getloc(sym, off)
+	LI R4,12
+	A SP,R4
+;indirect ccgint
+	MOV *R4,R4
+	MOV R4,R4
+	JNE $+6
+	B @cc19
+;getloc(sym, off)
+	LI R4,2
+	A SP,R4
+;indirect ccgint
+	MOV *R4,R4
+	DECT SP
+	MOV R4,*SP
+	CLR R4
+	MOV *SP+,R3
+;_ccgt
+	C R3,R4
+	JGT $+6
+	B @cc19
+	LI R4,1
+;jump(label)
+	B @cc20
+cc19:
+	CLR R4
+cc20:
+	MOV R4,R4
+	JNE $+6
+	B @cc18
+;			str[--i] = (nbr % 10) + '0';
+;modstk(newsp,save)
+;getloc(sym, off)
+	LI R4,10
+	A SP,R4
+;indirect ccgint
+	MOV *R4,R4
+	DECT SP
+	MOV R4,*SP
+;getloc(sym, off)
+	LI R4,4
+	A SP,R4
+	DECT SP
+	MOV R4,*SP
+;indirect ccgint
+	MOV *R4,R4
+;	dec()
+	DEC R4
+	MOV *SP+,R3
+;putstk - int
+	MOV R4,*R3
+;scale(type,tag)
+	MOV *SP+,R3
+;	zadd()
+	A R3,R4
+	DECT SP
+	MOV R4,*SP
+;getloc(sym, off)
+	LI R4,14
+	A SP,R4
+;indirect ccgint
+	MOV *R4,R3;optimised
+	LI R4,10
+	BL @_ccdiv##
+;swap()
+	MOV R3,R0;;
+	MOV R4,R3
+	MOV R0,R4
+;const2(val)
+	LI R3,48
+;	zadd()
+	A R3,R4
+	MOV *SP+,R3
+;putstk - char
+	MOVB @2*R4+1(WP),*R3
+;			nbr /= 10;
+;getloc(sym, off)
+	LI R4,12
+	A SP,R4
+	DECT SP
+	MOV R4,*SP
+;indirect ccgint
+	MOV *R4,R3;optimised
+	LI R4,10
+	BL @_ccdiv##
+	MOV *SP+,R3
+;putstk - int
+	MOV R4,*R3
+;		}
+;modstk(newsp,save)
+;jump(label)
+	B @cc17
+cc18:
+;	}
+;modstk(newsp,save)
+cc16:
+;	if (i > 0 && sgn == '-') {
+;getloc(sym, off)
+	LI R4,2
+	A SP,R4
+;indirect ccgint
+	MOV *R4,R4
+	DECT SP
+	MOV R4,*SP
+	CLR R4
+	MOV *SP+,R3
+;_ccgt
+	C R3,R4
+	JGT $+6
+	B @cc22
+;getloc(sym, off)
+;Char offset
+	LI R4,5
+	A SP,R4
+;indirect ccgchar
+	MOVB *R4,R3;optimised
+	SRA R3,8
+	LI R4,45
+;_cceq
+	C R3,R4;optimised
+	JEQ $+6
+	B @cc22
+	LI R4,1
+;jump(label)
+	B @cc23
+cc22:
+	CLR R4
+cc23:
+	MOV R4,R4
+	JNE $+6
+	B @cc21
+;		str[--i] = sgn;
+;modstk(newsp,save)
+;getloc(sym, off)
+	LI R4,10
+	A SP,R4
+;indirect ccgint
+	MOV *R4,R4
+	DECT SP
+	MOV R4,*SP
+;getloc(sym, off)
+	LI R4,4
+	A SP,R4
+	DECT SP
+	MOV R4,*SP
+;indirect ccgint
+	MOV *R4,R4
+;	dec()
+	DEC R4
+	MOV *SP+,R3
+;putstk - int
+	MOV R4,*R3
+;scale(type,tag)
+	MOV *SP+,R3
+;	zadd()
+	A R3,R4
+	DECT SP
+	MOV R4,*SP
+;getloc(sym, off)
+;Char offset
+	LI R4,7
+	A SP,R4
+;indirect ccgchar
+	MOVB *R4,R4
+	SRA R4,8
+	MOV *SP+,R3
+;putstk - char
+	MOVB @2*R4+1(WP),*R3
+;	}
+;modstk(newsp,save)
+;	while (i > 0) {
+cc21:
+cc24:
+;getloc(sym, off)
+	LI R4,2
+	A SP,R4
+;indirect ccgint
+	MOV *R4,R4
+;gt0(label)
+	MOV R4,R4
+	JGT $+6
+	B @cc25
+;		str[--i] = ' ';
+;modstk(newsp,save)
+;getloc(sym, off)
+	LI R4,10
+	A SP,R4
+;indirect ccgint
+	MOV *R4,R4
+	DECT SP
+	MOV R4,*SP
+;getloc(sym, off)
+	LI R4,4
+	A SP,R4
+	DECT SP
+	MOV R4,*SP
+;indirect ccgint
+	MOV *R4,R4
+;	dec()
+	DEC R4
+	MOV *SP+,R3
+;putstk - int
+	MOV R4,*R3
+;scale(type,tag)
+	MOV *SP+,R3
+;	zadd()
+	A R3,R4
+	DECT SP
+	MOV R4,*SP
+	LI R4,32
+	MOV *SP+,R3
+;putstk - char
+	MOVB @2*R4+1(WP),*R3
+;	}
+;modstk(newsp,save)
+;jump(label)
+	B @cc24
+cc25:
+;	return str;
+;getloc(sym, off)
+	LI R4,10
+	A SP,R4
+;indirect ccgint
+	MOV *R4,R4
+;modstk(newsp,save)
+	AI SP,6
+	RET
+;}
+	ENT itod
+	EVEN
+	END
+
+; --- End of Compilation ---
