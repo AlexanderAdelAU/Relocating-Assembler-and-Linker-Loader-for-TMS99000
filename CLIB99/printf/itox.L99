@@ -1,0 +1,493 @@
+                        ;* * *  Small-C/Plus Version 1.06a for the TMS 9900 - Cameron * * *
+                        ;       Cain, Van Zandt, Hendrix, Yorston, Cameron
+                        ;          Original Z80  Version 21st April 1990       
+                        ;
+  0000                  R0	EQU 0
+  0001                  R1	EQU 1
+  0002                  R2	EQU 2
+  0003                  R3	EQU 3
+  0004                  R4	EQU 4
+  0008                  R8	EQU 8
+  0009                  SL	EQU 9
+  000A                  SP	EQU 10
+  000D                  WP	EQU 13
+  000B                  R11	EQU 11
+                        	DXOP CALL,6
+                        	DXOP RET,7
+                        	DXOP WHEX,10
+                        	DXOP WRITE,12    ;WRITE CHAR IN MSB 
+                        	DXOP DEBUG,15    ;TRACE THE PRECEDING INSTRUCTION, PC,ST and REGISTERS 
+                        
+                        ;-------- START MODULE -----------
+  0000                  	NAM printf\itox
+  0000   1000           	NOP; Required to terminate link chain with non zero for global variables
+                        ;/*
+                        ; * itox -- converts nbr to hex string of length sz
+                        ; *	       right adjusted and blank filled, returns str
+                        ; *
+                        ; *	      if sz > 0 terminate with null byte
+                        ; *	      if sz  =  0 find end of string
+                        ; *	      if sz < 0 use last byte for data
+                        ; */
+                        ;#include "stdio.h"
+                        ;/*
+                        ;** STDIO.H -- Standard Small-C Definitions
+                        ;**
+                        ;** Copyright 1984  L. E. Payne and J. E. Hendrix
+                        ;*/
+                        ;#define stdin    0
+                        ;#define stdout   1
+                        ;#define stderr   2
+                        ;#define ERR   (-2)
+                        ;#define EOF   (-1)
+                        ;#define YES      1
+                        ;#define NO       0
+                        ;#define NULL     0
+                        ;#define CR      0x0D /* '\r' */
+                        ;#define LF      0x0A /* '\n' */
+                        ;#define BELL     7
+                        ;#define SPACE  ' '
+                        ;#define NEWLINE LF      /*23*/ /*45*/
+                        ;#define FILE char
+                        ;itox(nbr, str, sz)
+  0002                  	EVEN
+                        itox:
+                        ;    int nbr; char str[]; int sz; {
+                        ;modstk(newsp,save)
+                        ;    int digit, offset, i, max_digits;
+                        ;  //  nbr &= 0xFFFF; /* Mask to 16 bits */
+                        ;    if (sz > 0) {
+                        ;modstk(newsp,save)
+  0002   022A FFF8      	AI SP,-8
+                        ;getloc(sym, off)
+  0006   0204 000A      	LI R4,10
+  000A   A10A           	A SP,R4
+                        ;indirect ccgint
+  000C   C114           	MOV *R4,R4
+                        ;gt0(label)
+  000E   C104           	MOV R4,R4
+  0010   1502           	JGT $+6
+  0012   0460 0048      	B @cc2
+                        ;        str[--sz] = NULL;
+                        ;modstk(newsp,save)
+                        ;getloc(sym, off)
+  0016   0204 000C      	LI R4,12
+  001A   A10A           	A SP,R4
+                        ;indirect ccgint
+  001C   C114           	MOV *R4,R4
+  001E   064A           	DECT SP
+  0020   C684           	MOV R4,*SP
+                        ;getloc(sym, off)
+  0022   0204 000C      	LI R4,12
+  0026   A10A           	A SP,R4
+  0028   064A           	DECT SP
+  002A   C684           	MOV R4,*SP
+                        ;indirect ccgint
+  002C   C114           	MOV *R4,R4
+                        ;	dec()
+  002E   0604           	DEC R4
+  0030   C0FA           	MOV *SP+,R3
+                        ;putstk - int
+  0032   C4C4           	MOV R4,*R3
+                        ;scale(type,tag)
+  0034   C0FA           	MOV *SP+,R3
+                        ;	zadd()
+  0036   A103           	A R3,R4
+  0038   064A           	DECT SP
+  003A   C684           	MOV R4,*SP
+  003C   04C4           	CLR R4
+  003E   C0FA           	MOV *SP+,R3
+                        ;putstk - char
+  0040   D4ED 0009      	MOVB @2*R4+1(WP),*R3
+                        ;    } else if (sz < 0) {
+                        ;modstk(newsp,save)
+                        ;jump(label)
+  0044   0460 00AE      	B @cc3
+                        cc2:
+                        ;getloc(sym, off)
+  0048   0204 000A      	LI R4,10
+  004C   A10A           	A SP,R4
+                        ;indirect ccgint
+  004E   C114           	MOV *R4,R4
+                        ;lt0(label)
+  0050   C104           	MOV R4,R4
+  0052   1102           	JLT $+6
+  0054   0460 0074      	B @cc4
+                        ;        sz = -sz;
+                        ;modstk(newsp,save)
+                        ;getloc(sym, off)
+  0058   0204 000A      	LI R4,10
+  005C   A10A           	A SP,R4
+  005E   064A           	DECT SP
+  0060   C684           	MOV R4,*SP
+                        ;getloc(sym, off)
+  0062   0204 000C      	LI R4,12
+  0066   A10A           	A SP,R4
+                        ;indirect ccgint
+  0068   C114           	MOV *R4,R4
+                        ;neg()
+  006A   0504           	NEG R4
+  006C   C0FA           	MOV *SP+,R3
+                        ;putstk - int
+  006E   C4C4           	MOV R4,*R3
+                        ;    } else {
+                        ;modstk(newsp,save)
+                        ;jump(label)
+  0070   0460 00AE      	B @cc5
+                        cc4:
+                        ;        while (str[sz] != NULL) {
+                        ;modstk(newsp,save)
+                        cc6:
+                        ;getloc(sym, off)
+  0074   0204 000C      	LI R4,12
+  0078   A10A           	A SP,R4
+                        ;indirect ccgint
+  007A   C114           	MOV *R4,R4
+  007C   064A           	DECT SP
+  007E   C684           	MOV R4,*SP
+                        ;getloc(sym, off)
+  0080   0204 000C      	LI R4,12
+  0084   A10A           	A SP,R4
+                        ;indirect ccgint
+  0086   C114           	MOV *R4,R4
+                        ;scale(type,tag)
+  0088   C0FA           	MOV *SP+,R3
+                        ;	zadd()
+  008A   A103           	A R3,R4
+                        ;indirect ccgchar
+  008C   D114           	MOVB *R4,R4
+  008E   0884           	SRA R4,8
+  0090   C104           	MOV R4,R4
+  0092   1602           	JNE $+6
+  0094   0460 00AE      	B @cc7
+                        ;            ++sz;
+                        ;modstk(newsp,save)
+                        ;getloc(sym, off)
+  0098   0204 000A      	LI R4,10
+  009C   A10A           	A SP,R4
+  009E   064A           	DECT SP
+  00A0   C684           	MOV R4,*SP
+                        ;indirect ccgint
+  00A2   C114           	MOV *R4,R4
+                        ;inc()
+  00A4   0584           	INC R4
+  00A6   C0FA           	MOV *SP+,R3
+                        ;putstk - int
+  00A8   C4C4           	MOV R4,*R3
+                        ;        }
+                        ;modstk(newsp,save)
+                        ;jump(label)
+  00AA   0460 0074      	B @cc6
+                        cc7:
+                        ;    }
+                        ;modstk(newsp,save)
+                        cc5:
+                        cc3:
+                        ;    i = sz;
+                        ;getloc(sym, off)
+  00AE   0204 000A      	LI R4,10
+  00B2   A10A           	A SP,R4
+                        ;indirect ccgint
+  00B4   C114           	MOV *R4,R4
+                        ;put2tos()
+  00B6   CA84 0002      	MOV R4,@2(SP)
+                        ;    if (nbr == 0) {
+                        ;getloc(sym, off)
+  00BA   0204 000E      	LI R4,14
+  00BE   A10A           	A SP,R4
+                        ;indirect ccgint
+  00C0   C114           	MOV *R4,R4
+  00C2   C104           	MOV R4,R4
+  00C4   1302           	JEQ $+6
+  00C6   0460 010E      	B @cc8
+                        ;        if (i > 0) {
+                        ;modstk(newsp,save)
+                        ;getloc(sym, off)
+  00CA   0204 0002      	LI R4,2
+  00CE   A10A           	A SP,R4
+                        ;indirect ccgint
+  00D0   C114           	MOV *R4,R4
+                        ;gt0(label)
+  00D2   C104           	MOV R4,R4
+  00D4   1502           	JGT $+6
+  00D6   0460 010A      	B @cc9
+                        ;            str[--i] = '0';
+                        ;modstk(newsp,save)
+                        ;getloc(sym, off)
+  00DA   0204 000C      	LI R4,12
+  00DE   A10A           	A SP,R4
+                        ;indirect ccgint
+  00E0   C114           	MOV *R4,R4
+  00E2   064A           	DECT SP
+  00E4   C684           	MOV R4,*SP
+                        ;getloc(sym, off)
+  00E6   0204 0004      	LI R4,4
+  00EA   A10A           	A SP,R4
+  00EC   064A           	DECT SP
+  00EE   C684           	MOV R4,*SP
+                        ;indirect ccgint
+  00F0   C114           	MOV *R4,R4
+                        ;	dec()
+  00F2   0604           	DEC R4
+  00F4   C0FA           	MOV *SP+,R3
+                        ;putstk - int
+  00F6   C4C4           	MOV R4,*R3
+                        ;scale(type,tag)
+  00F8   C0FA           	MOV *SP+,R3
+                        ;	zadd()
+  00FA   A103           	A R3,R4
+  00FC   064A           	DECT SP
+  00FE   C684           	MOV R4,*SP
+  0100   0204 0030      	LI R4,48
+  0104   C0FA           	MOV *SP+,R3
+                        ;putstk - char
+  0106   D4ED 0009      	MOVB @2*R4+1(WP),*R3
+                        ;        }
+                        ;modstk(newsp,save)
+                        ;    } else {
+                        cc9:
+                        ;modstk(newsp,save)
+                        ;jump(label)
+  010A   0460 0212      	B @cc10
+                        cc8:
+                        ;        max_digits = 4; // Only allow 4 hex digits
+                        ;        while (nbr && i > 0 && max_digits--) {
+                        ;modstk(newsp,save)
+  010E   0204 0004      	LI R4,4
+                        ;puttos()
+  0112   C684           	MOV R4,*SP
+                        cc11:
+                        ;getloc(sym, off)
+  0114   0204 000E      	LI R4,14
+  0118   A10A           	A SP,R4
+                        ;indirect ccgint
+  011A   C114           	MOV *R4,R4
+  011C   C104           	MOV R4,R4
+  011E   1602           	JNE $+6
+  0120   0460 015C      	B @cc13
+                        ;getloc(sym, off)
+  0124   0204 0002      	LI R4,2
+  0128   A10A           	A SP,R4
+                        ;indirect ccgint
+  012A   C114           	MOV *R4,R4
+  012C   064A           	DECT SP
+  012E   C684           	MOV R4,*SP
+  0130   04C4           	CLR R4
+  0132   C0FA           	MOV *SP+,R3
+                        ;_ccgt
+  0134   8103           	C R3,R4
+  0136   1502           	JGT $+6
+  0138   0460 015C      	B @cc13
+                        ;getloc(sym, off)
+  013C   C10A           	MOV SP,R4
+  013E   064A           	DECT SP
+  0140   C684           	MOV R4,*SP
+                        ;indirect ccgint
+  0142   C114           	MOV *R4,R4
+                        ;	dec()
+  0144   0604           	DEC R4
+  0146   C0FA           	MOV *SP+,R3
+                        ;putstk - int
+  0148   C4C4           	MOV R4,*R3
+                        ;inc()
+  014A   0584           	INC R4
+  014C   C104           	MOV R4,R4
+  014E   1602           	JNE $+6
+  0150   0460 015C      	B @cc13
+  0154   0204 0001      	LI R4,1
+                        ;jump(label)
+  0158   0460 015E      	B @cc14
+                        cc13:
+  015C   04C4           	CLR R4
+                        cc14:
+  015E   C104           	MOV R4,R4
+  0160   1602           	JNE $+6
+  0162   0460 0212      	B @cc12
+                        ;            digit = nbr & 0xF;
+                        ;modstk(newsp,save)
+                        ;getloc(sym, off)
+  0166   0204 0006      	LI R4,6
+  016A   A10A           	A SP,R4
+  016C   064A           	DECT SP
+  016E   C684           	MOV R4,*SP
+                        ;getloc(sym, off)
+  0170   0204 0010      	LI R4,16
+  0174   A10A           	A SP,R4
+                        ;indirect ccgint
+  0176   C0D4           	MOV *R4,R3;optimised
+  0178   0204 000F      	LI R4,15
+                        ;zand()
+  017C   0543           	INV R3
+  017E   4103           	SZC R3,R4
+  0180   C0FA           	MOV *SP+,R3
+                        ;putstk - int
+  0182   C4C4           	MOV R4,*R3
+                        ;            offset = digit < 10 ? '0' : 'A' - 10;
+                        ;getloc(sym, off)
+  0184   0204 0004      	LI R4,4
+  0188   A10A           	A SP,R4
+  018A   064A           	DECT SP
+  018C   C684           	MOV R4,*SP
+                        ;getloc(sym, off)
+  018E   0204 0008      	LI R4,8
+  0192   A10A           	A SP,R4
+                        ;indirect ccgint
+  0194   C0D4           	MOV *R4,R3;optimised
+  0196   0204 000A      	LI R4,10
+                        ;_cclt
+  019A   8103           	C R3,R4
+  019C   1102           	JLT $+6
+  019E   0460 01AA      	B @cc15
+  01A2   0204 0030      	LI R4,48
+                        ;jump(label)
+  01A6   0460 01AE      	B @cc16
+                        cc15:
+  01AA   0204 0037      	LI R4,55
+                        cc16:
+  01AE   C0FA           	MOV *SP+,R3
+                        ;putstk - int
+  01B0   C4C4           	MOV R4,*R3
+                        ;            str[--i] = digit + offset;
+                        ;getloc(sym, off)
+  01B2   0204 000C      	LI R4,12
+  01B6   A10A           	A SP,R4
+                        ;indirect ccgint
+  01B8   C114           	MOV *R4,R4
+  01BA   064A           	DECT SP
+  01BC   C684           	MOV R4,*SP
+                        ;getloc(sym, off)
+  01BE   0204 0004      	LI R4,4
+  01C2   A10A           	A SP,R4
+  01C4   064A           	DECT SP
+  01C6   C684           	MOV R4,*SP
+                        ;indirect ccgint
+  01C8   C114           	MOV *R4,R4
+                        ;	dec()
+  01CA   0604           	DEC R4
+  01CC   C0FA           	MOV *SP+,R3
+                        ;putstk - int
+  01CE   C4C4           	MOV R4,*R3
+                        ;scale(type,tag)
+  01D0   C0FA           	MOV *SP+,R3
+                        ;	zadd()
+  01D2   A103           	A R3,R4
+  01D4   064A           	DECT SP
+  01D6   C684           	MOV R4,*SP
+                        ;getloc(sym, off)
+  01D8   0204 0008      	LI R4,8
+  01DC   A10A           	A SP,R4
+                        ;indirect ccgint
+  01DE   C114           	MOV *R4,R4
+  01E0   064A           	DECT SP
+  01E2   C684           	MOV R4,*SP
+                        ;getloc(sym, off)
+  01E4   0204 0008      	LI R4,8
+  01E8   A10A           	A SP,R4
+                        ;indirect ccgint
+  01EA   C114           	MOV *R4,R4
+  01EC   C0FA           	MOV *SP+,R3
+                        ;	zadd()
+  01EE   A103           	A R3,R4
+  01F0   C0FA           	MOV *SP+,R3
+                        ;putstk - char
+  01F2   D4ED 0009      	MOVB @2*R4+1(WP),*R3
+                        ;            nbr >>= 4;
+                        ;getloc(sym, off)
+  01F6   0204 000E      	LI R4,14
+  01FA   A10A           	A SP,R4
+  01FC   064A           	DECT SP
+  01FE   C684           	MOV R4,*SP
+                        ;indirect ccgint
+  0200   C0D4           	MOV *R4,R3;optimised
+  0202   0204 0004      	LI R4,4
+  0206   06A0 0000      	BL @_ccasr##
+  020A   C0FA           	MOV *SP+,R3
+                        ;putstk - int
+  020C   C4C4           	MOV R4,*R3
+                        ;        }
+                        ;modstk(newsp,save)
+                        ;jump(label)
+  020E   0460 0114      	B @cc11
+                        cc12:
+                        ;    }
+                        ;modstk(newsp,save)
+                        cc10:
+                        ;    while (i > 0) {
+                        cc17:
+                        ;getloc(sym, off)
+  0212   0204 0002      	LI R4,2
+  0216   A10A           	A SP,R4
+                        ;indirect ccgint
+  0218   C114           	MOV *R4,R4
+                        ;gt0(label)
+  021A   C104           	MOV R4,R4
+  021C   1502           	JGT $+6
+  021E   0460 0256      	B @cc18
+                        ;        str[--i] = ' ';
+                        ;modstk(newsp,save)
+                        ;getloc(sym, off)
+  0222   0204 000C      	LI R4,12
+  0226   A10A           	A SP,R4
+                        ;indirect ccgint
+  0228   C114           	MOV *R4,R4
+  022A   064A           	DECT SP
+  022C   C684           	MOV R4,*SP
+                        ;getloc(sym, off)
+  022E   0204 0004      	LI R4,4
+  0232   A10A           	A SP,R4
+  0234   064A           	DECT SP
+  0236   C684           	MOV R4,*SP
+                        ;indirect ccgint
+  0238   C114           	MOV *R4,R4
+                        ;	dec()
+  023A   0604           	DEC R4
+  023C   C0FA           	MOV *SP+,R3
+                        ;putstk - int
+  023E   C4C4           	MOV R4,*R3
+                        ;scale(type,tag)
+  0240   C0FA           	MOV *SP+,R3
+                        ;	zadd()
+  0242   A103           	A R3,R4
+  0244   064A           	DECT SP
+  0246   C684           	MOV R4,*SP
+  0248   0204 0020      	LI R4,32
+  024C   C0FA           	MOV *SP+,R3
+                        ;putstk - char
+  024E   D4ED 0009      	MOVB @2*R4+1(WP),*R3
+                        ;    }
+                        ;modstk(newsp,save)
+                        ;jump(label)
+  0252   0460 0212      	B @cc17
+                        cc18:
+                        ;    return str;
+                        ;getloc(sym, off)
+  0256   0204 000C      	LI R4,12
+  025A   A10A           	A SP,R4
+                        ;indirect ccgint
+  025C   C114           	MOV *R4,R4
+                        ;modstk(newsp,save)
+  025E   022A 0008      	AI SP,8
+  0262   2DC0           	RET
+                        ;}
+                        	ENT itox
+  0264                  	EVEN
+  0264                  	END
+
+No error(s).
+cc5           00AE'  cc2           0048'  WP            000D   _ccasr        0208*  
+itox          0002'  cc8           010E'  R4            0004   cc7           00AE'  
+CALL          2D80'  cc17          0212'  cc18          0256'  R0            0000   
+cc13          015C'  cc4           0074'  cc16          01AE'  cc9           010A'  
+SP            000A   RET           2DC0'  R8            0008   DEBUG         2FC0'  
+cc6           0074'  printf\itox   0000'  R11           000B   R2            0002   
+cc15          01AA'  WRITE         2F00'  cc12          0212'  cc3           00AE'  
+cc14          015E'  R1            0001   WHEX          2E80'  SL            0009   
+cc10          0212'  R3            0003   cc11          0114'  
+ 0000   
+cc13          0170'  cc4           008C'  cc16          01C2'  cc9           011C'  
+SP            000A   RET           2DC0'  R8            0008   DEBUG         2FC0'  
+cc6           008C'  printf\itox   0000'  R11           000B   R2            0002   
+cc15          01BE'  WRITE         2F00'  cc12          0226'  cc3           00C6'  
+cc14          0172'  R1            0001   WHEX          2E80'  SL            0009   
+cc10          0228'  R3            0003   cc11          0128'  
+
