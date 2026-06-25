@@ -2,27 +2,27 @@
 
 ## Overview
 
-`link99` is a relocatable linker/loader for the TMS9900 architecture, producing `.COM` binaries for the TMS99105 SBC. It processes `.R99` relocatable object modules produced by the `r99` cross-assembler, resolves external references, and generates flat or paged output binaries.
+`link99` is a relocatable linker for the TMS9900 architecture, producing `.COM` and `.EXE` binaries for the TMS99105 SBC. It processes `.R99` relocatable object modules produced by the `r99` cross-assembler, resolves external references, and generates flat or paged chain format output binaries.
 
 **Authors:**
 - J.E. Hendrix — original Small-MAC linker (8080/CP/M, 1985)
 - Alex Cameron — TMS9900 port (1984), Eclipse cross-compiler (2015), ongoing development
 
-**Current version:** 3.9.6
+**Current version:** 3.9.10
 
 ---
 
 ## Usage
 
 ```
-link99 [-B] [-M] [-G#] [-D#] [-S] [-P#] [-PAGES#-#] program [module/library ...]
+link99 [-B] [-M] [-O#] [-G#] [-D#] [-S] [-P#] [-PAGES#-#] program [module/library ...]
 ```
 
 ### Arguments
 
 | Argument | Description |
 |----------|-------------|
-| `program` | Output filename (`.COM` appended). If a matching `.R99` exists it is loaded first. |
+| `program` | Output filename. If a matching `.R99` exists it is loaded first. |
 | `module` | Relocatable object module (`.R99`) |
 | `library` | Library file (`.LIB`) — searched multi-pass |
 
@@ -30,7 +30,8 @@ link99 [-B] [-M] [-G#] [-D#] [-S] [-P#] [-PAGES#-#] program [module/library ...]
 
 | Switch | Description |
 |--------|-------------|
-| `-M` | Monitor — verbose output showing module loads, PREL values, symbol resolutions |
+| `-M` | Monitor — verbose output showing module loads, PREL values, symbol resolutions, chain blocks |
+| `-O#` | Set code base address to hex `#` (e.g. `-O1000` for EXE files loading at TPA) |
 | `-P#` | Tag the next module as physical page `#` (0–15). Used for overlay modules. |
 | `-PAGES#-#` | Auto-assign pages in range — e.g. `-PAGES2-15` assigns next free page to each module |
 | `-B` | Big program — force all code to disk from the start, freeing buffer for symbol table |
@@ -42,27 +43,40 @@ link99 [-B] [-M] [-G#] [-D#] [-S] [-P#] [-PAGES#-#] program [module/library ...]
 
 ## Output File Formats
 
-### Flat Binary (non-paged) — `.COM`
+### Flat Binary — `.COM`
 
-Used for programs that run entirely in segment 0 (TPA). No pagemap header.
-
-```
-[raw binary bytes, loaded directly to 0x1000]
-```
-
-### Paged Binary — `.COM` with pagemap
-
-Used for overlay modules assembled with `AORG` and tagged with `-P#`. The loader reads the pagemap to program the 6116 mapper registers before copying code to the correct virtual address.
+Used for programs that run entirely in segment 0 (TPA at `0x1000`). No header.
 
 ```
-FFFF FFFF FFFF              opening sentinel
-vstart vend  page           pagemap entry (6 bytes): virtual start, end, physical page
-FFFF FFFF FFFF              closing sentinel
-size                        block size in bytes
-[code bytes...]             code for this page
+[raw binary bytes, loaded directly to TPA]
 ```
 
-Multiple pagemap entries may appear (one per page used). The loader iterates all entries, programs the mapper for each, then copies the corresponding code block.
+### Paged Chain Format — `.EXE`
+
+Used for programs with overlay modules assembled with `AORG` and tagged with `-P#`. The shell's `LOADERCODE_EXE` reads the chain to program the mapper and copy each block.
+
+Each block:
+```
+next_offset   word    byte distance to next block header (0 = last block)
+page          word    physical page number (0 = common/flat)
+start         word    virtual load address
+size          word    byte count of data
+[data bytes]
+```
+
+Blocks are chained via `next_offset`. The loader programs the mapper for each paged block, copies the data to the virtual address, and launches from the `start` address of the first block.
+
+### EXE Build Command
+
+```
+link99 -O1000 -M ovltest.EXE ovltest.R99 ovlmgr.R99 -P2 ovla.R99 -P3 ovlb.R99
+```
+
+- `-O1000` sets `cbase=0x1000` for base relocatable modules (TPA for EXE files)
+- Base modules (`ovltest.R99`, `ovlmgr.R99`) are placed contiguously from `0x1000`
+- `-P2 ovla.R99` tags OVLA as physical page 2; `AORG 2000H` in source sets virtual address
+- `-P3 ovlb.R99` tags OVLB as physical page 3
+- Output has one page-0 block (base program) + one block per overlay page
 
 ---
 
@@ -70,22 +84,30 @@ Multiple pagemap entries may appear (one per page used). The loader iterates all
 
 Modules are linked in command-line order. External references (`EXT`) in one module are resolved against entry points (`ENT`) in subsequent modules.
 
-### Flat program with overlay manager
+### COM flat program
 
 ```
-link99 ovltest.COM ovltest.R99 ovlmgr.R99
+link99 -M ovltest.COM ovltest.R99 ovlmgr.R99
 ```
 
-OVLTEST and OVLMGR are both relocatable — the linker places them contiguously from `cbase=0x1000`.
+Both modules are relocatable — placed contiguously from `cbase=0x1000`.
 
-### Overlay modules (paged)
+### EXE with overlays
 
 ```
-link99 -P2 ovla.COM ovla.R99
-link99 -P3 ovlb.COM ovlb.R99
+link99 -O1000 -M ovltest.EXE ovltest.R99 -P2 ovla.R99 -P3 ovlb.R99
 ```
 
-Each overlay is linked separately. `-P2` tags the module as physical page 2; the linker writes a pagemap entry and places the code at the virtual `AORG` address.
+Note: with the overlay manager (`OVLMGR`) now resident in common at `0x0A00H` (booted by the shell), it no longer needs to be linked with application EXEs.
+
+### Overlay modules as separate COM files (manual load via `LOAD` command)
+
+```
+link99 -M -P2 ovla.COM ovla.R99
+link99 -M -P3 ovlb.COM ovlb.R99
+```
+
+These produce single-block chain format `.COM` files loadable via the shell `LOAD` command.
 
 ### Libraries
 
@@ -93,7 +115,7 @@ Each overlay is linked separately. `-P2` tags the module as physical page 2; the
 link99 program.COM main.R99 clib99.LIB iolib99.LIB
 ```
 
-Libraries are searched **multi-pass** — after all command-line arguments are processed, all libraries are re-searched repeatedly until no new modules are loaded. This resolves cross-library dependencies regardless of library order on the command line.
+Libraries are searched **multi-pass** — after all command-line arguments are processed, all libraries are re-searched repeatedly until no new modules are loaded. This resolves cross-library dependencies regardless of library order.
 
 ---
 
@@ -116,30 +138,29 @@ The `.R99` file is a **packed bit-stream**, not a byte stream. Each item is enco
 
 ### PREL Relocation
 
-When the linker loads a module, each PREL word has the absolute address computed as:
+When the linker loads a module, each PREL word is computed as:
 
 ```
 absolute = cbase + cmod + field
 ```
 
 Where:
-- `cbase` = program base address (default `0x1000` for flat programs)
+- `cbase` = program base address (set by `-O#`, default `0` in paged mode)
 - `cmod` = offset of this module within the linked image
 - `field` = the raw PREL value from the REL file (module-relative offset)
 
 **Important:** `field=0` is a valid PREL value (symbol at offset 0 of module) and always has `cmod` added. The linker never skips zero-field PRels.
 
+### AORG Modules
+
+Overlay modules use `AORG` to assemble at an absolute virtual address (e.g. `AORG 2000H`). Their PREL values are already absolute (`>= PAGE_SEG = 0x1000`). The linker detects this and does **not** add `cbase` or `cmod` — doing so would double-relocate them. The distinction is:
+
+- `field < 0x1000` → relocatable module → add `cbase + cmod`
+- `field >= 0x1000` → AORG module → add `cmod` only (already absolute within page)
+
 ### cmod Calculation
 
-`cmod` is saved at `ENAME` time (start of module), before any `SETLC` records can move the location counter. This ensures that modules containing BSS data (which generate `SETLC` records before `PSIZE`) have the correct `cmod` value.
-
----
-
-## AORG Modules (Overlay Code)
-
-When a module uses `AORG` to assemble at an absolute address (e.g. `AORG 2000H`), the linker detects this automatically via `pmmin_global` — the minimum PREL value seen in the first module. If `pmmin_global >= PAGE_SEG (0x1000)`, the addresses are already absolute and `cbase` is set to 0.
-
-The AORG base is stripped from `SETLC` addresses (which reflect absolute positions) so that module-relative offsets are computed correctly.
+`cmod` is saved at `ENAME` time (start of module), before any `SETLC` records move the location counter. This ensures that modules containing BSS data have the correct `cmod` value.
 
 ---
 
@@ -149,35 +170,40 @@ After each module loads, `resolve()` walks all unresolved external chains:
 
 1. Finds the `XCHAIN` linked list for the external symbol in the code image
 2. Patches each location with the absolute address of the matching `EPOINT`
-3. For relocatable modules: `xbuf = xrloc` (buffer offset = location counter value)
-4. For AORG modules: `xbuf = xrloc - cbase` (strip the absolute base)
+3. For relocatable modules: `xbuf = xrloc - cbase` (convert virtual addr to buffer offset)
+4. For AORG modules: same — `cbase` is stripped to get the correct buffer position
 
 ---
 
 ## Monitor Output (`-M`)
 
-The `-M` flag produces verbose output useful for debugging linker issues:
+The `-M` flag produces verbose output useful for debugging:
 
 ```
 Loading module: OVLTEST
-  12A Code Bytes at  0' 1000 OVLTEST
-  PREL seen: field= 76 pagemode=NO pmmin_valid=NO
+  136 Code Bytes at  0' 1000 OVLTEST
+  PREL seen: field= 78 pagemode=YES pmmin_valid=NO
   ...
-Loading module: OVLMGR
-   3C Code Bytes at 12A' 112A OVLMGR
-  PREL seen: field=130 pagemode=NO pmmin_valid=NO
-  PREL seen: field=12A pagemode=NO pmmin_valid=NO   ← offset-0 symbol, cmod added
+  AORG fixup: base=1000 end=1136
+
+Loading module: OVLA
+   58 Code Bytes at 172' 1172 OVLA
+  PREL seen: field=008 pagemode=YES pmmin_valid=NO
   ...
-Resolving external: OVLMGR     → 0x1132
-Resolving external: OVLMGR_INI → 0x1158
-Searching for main in cbase=1000 pmmin_global=1E
-CODE SIZE  166 (1000-1165)
+  AORG fixup: base=2000 end=2058
+
+Phase 2 - Writing execution files
+
+  CHAIN BLOCK pg= 0 start=1000 size=  172
+  CHAIN BLOCK pg= 2 start=2000 size=   58
+  CHAIN BLOCK pg= 3 start=2000 size=   58
 ```
 
-Key fields to watch:
+Key fields:
 - `field=0` with `cmod > 0` — symbol at start of module, must get `cmod` added
-- `pagemode=YES` — paged AORG module
-- `AORG fixup: base=2000 end=2062` — linker detected and stripped AORG base
+- `pagemode=YES` — paged/AORG module detected
+- `AORG fixup: base=2000 end=2058` — AORG base detected and handled
+- `CHAIN BLOCK` — output block summary showing page, virtual start, and size
 
 ---
 
@@ -203,23 +229,27 @@ Key fields to watch:
 | 3.9.4 | Fix `cmod` — save `cloc` at ENAME before SETLC records corrupt it |
 | 3.9.5 | Fix `pmmin_global` — only track first module PRels for AORG detection |
 | 3.9.6 | Fix PREL — always add `cmod` even when `field=0` (offset 0 in module) |
+| 3.9.7 | Chain block format output replacing pagemap sentinel format |
+| 3.9.8 | `-O#` switch — set `cbase` explicitly for EXE builds |
+| 3.9.9 | Suppress ABS/PREL/DREL/CREL items from `-M` monitor output |
+| 3.9.10 | Fix PREL/cbase for mixed AORG/relocatable builds with `-O#`: phase 1 skips `cmod` add for AORG modules; phase 2 skips `cbase` add for AORG modules; `resolve()` subtracts `cbase` from `xrloc` for correct buffer offset |
 
 ---
 
 ## Building
 
-`link99` is a standard C program. Build on Windows or Linux:
+`link99` is a standard C program:
 
 ```bash
 gcc -o link99 link99.c getrel.c -I.
 ```
 
-Or on Windows with MSVC:
+On Windows with MSVC:
 ```
 cl link99.c getrel.c
 ```
 
-The source includes `getrel.c` which implements the packed bit-stream reader used to decode `.R99` files.
+`getrel.c` implements the packed bit-stream reader used to decode `.R99` files.
 
 ---
 
@@ -231,12 +261,17 @@ The source includes `getrel.c` which implements the packed bit-stream reader use
 - Check symbol name truncation — names are limited to 10 characters
 
 **Wrong address for symbol at module offset 0:**
-- This was a known bug fixed in v3.9.6 — `field=0` PRels were not getting `cmod` added
+- Fixed in v3.9.6 — `field=0` PRels were not getting `cmod` added
 
 **SETLC corrupting cmod:**
 - Fixed in v3.9.4 — BSS data generates SETLC records that moved `cloc` before PSIZE fired
-- `cmod` is now saved at ENAME time before any SETLC
+- `cmod` is now saved at ENAME time
 
-**AORG module addresses doubling:**
-- Fixed in v3.9.5 — `pmmin_global` was being polluted by second-module PRels
-- Now only the first module's PRels are tracked for AORG detection
+**AORG module addresses wrong under `-O#`:**
+- Fixed in v3.9.10 — AORG modules (field >= `PAGE_SEG`) now correctly skip `cbase` addition
+- Affects builds mixing relocatable base modules with AORG overlay modules
+
+**EXE file hanging on launch:**
+- Verify `-O1000` is used so base modules load at TPA (`0x1000`)
+- Check that overlay modules have `AORG 2000H` (or correct virtual address)
+- Do not include OVLMGR in the link command — it is now resident in common at `0x0A00H`
