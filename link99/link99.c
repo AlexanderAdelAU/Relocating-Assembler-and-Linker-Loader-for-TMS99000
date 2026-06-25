@@ -3,7 +3,7 @@
  Name        : link99.c
  Authors     : J. E. Hendrix (original Small-MAC linker, 1985)
                Alex Cameron (TMS9900 port 1984; Eclipse cross-compiler 2015)
- Version     : 3.9.5
+ Version     : 3.9.10
  Copyright   : Free to use
  Description : Relocatable linker/loader for the TMS9900 architecture.
                Based on the Small-MAC linkage editor (ver 1.0).
@@ -54,6 +54,47 @@
   3.9.3 A. Cameron     Fix resolve() xrloc is virtual addr - subtract cbase for buffer access
   3.9.4 A. Cameron     Fix cmod: save cloc at ENAME before SETLC records corrupt it
   3.9.5 A. Cameron     Fix pmmin_global: only track first module PRels for AORG detection
+  3.9.6 A. Cameron     Fix PREL: always add cmod even when field=0 (offset 0 in module)
+                       - Output name requires explicit .COM extension
+                       - Input modules require explicit .R99 extension
+                       - Address flags accept 0x prefix (e.g. -O0x2000)
+                       - Fixed: -O flag was silently ignored (cbase reset in phase1)
+                       - COMBASE removed: cbase defaults to 0, AORG addresses
+                         are absolute and require no base offset
+                       - oflag added: distinguishes -O0 from no -O flag
+                       - pmstart/pmend now store absolute addresses (cbase+cmod)
+                         so page map entries correctly reflect AORG-based modules
+                       - pageof() and in_page() updated for absolute pmstart/pmend
+                       Shell loader reads one page block at a time, programs
+                       6116 map registers, then loads directly to virtual
+                       address — no staging area needed, supports programs
+                       larger than available common memory.
+  3.9.7 A. Cameron     Fix cmod stale for library modules: search() consumes the
+                       ENAME record before load() runs, leaving cloc_at_ename set
+                       to the previous module's load base. Fix: initialise
+                       cloc_at_ename = cloc at the top of load() so PSIZE always
+                       gets the correct module base even when ENAME was pre-consumed.
+  3.9.8 A. Cameron     Fix mid-commandline -P# page tagging: getsw() was setting
+                       curpage globally from the last -P# seen, corrupting page
+                       assignments for modules before that flag. Fix: getsw() now
+                       only sets pagemode=YES; curpage is set exclusively in the
+                       phase1 argument loop at the point each -P# is encountered.
+                       This enables single-step overlay builds:
+                         link99 -M out.COM base.R99 -P2 ovla.R99 -P3 ovlb.R99
+  3.9.10 A. Cameron    Paged output: replace sentinel+pagemap+blocks format with
+                       a self-describing linked-list block chain. Each block has
+                       an 8-byte header: next_offset, page, start, size — followed
+                       immediately by its data. next_offset is the byte distance
+                       from this header to the next (0 = last block). The loader
+                       does a single forward pass: read header, MAP_SET, copy data,
+                       follow next_offset. No sentinels, no rewind, no two pointers.
+                       Paged output now emits .EXE extension (not .COM) so the
+                       shell loader can distinguish chain format from flat binary
+                       by file type alone — no magic numbers needed.
+                       Applies only to paged (-P#) output; flat .COM path unchanged.
+  3.9.9 A. Cameron     Suppress ABS/PREL/DREL/CREL items from -M monitor output.
+                       Only special items (ENAME and above, code >= 4) are printed,
+                       eliminating the blizzard of g=0/g=1 lines per code byte.
   3.9.6 A. Cameron     Fix PREL: always add cmod even when field=0 (offset 0 in module)
                        - Output name requires explicit .COM extension
                        - Input modules require explicit .R99 extension
@@ -260,6 +301,7 @@
 
 #define MAXFILES    20
 #define CRELSIZE    5               /* bytes per relocation table entry     */
+#define MAXMEM		48128;			/* start copying to disc 				*/
 
 #define NOCCARGC                    /* do not pass arg counts to functions  */
 
@@ -282,6 +324,7 @@
 #define LIBEXT  ".LIB"
 #define NDXEXT  ".NDX"
 #define COMEXT  ".COM"
+#define EXEEXT  ".EXE"              /* paged chain-format output            */
 #define LGOEXT  ".LGO"
 #define OFLEXT  ".O$"
 #define REFEXT  ".R$"
@@ -509,6 +552,9 @@ extern int  getint();
 extern void putint();
 extern int  get16int();
 extern void put16int();
+
+/* Forward declaration for emit_page_block_data (defined after emit_chain_blocks) */
+unsigned emit_page_block_data();
 
 /* ==========================================================================
  * pageof  -  Return the page number (0 or 1) of absolute address 'addr'.
@@ -759,7 +805,13 @@ emit_raw_block(cloc_p, ref_p)
 		ctseek(tp);
 		read(ctfd, rtbuf, CRELSIZE);
 		field = get16int(rtbuf + 2);
-		if (rtbuf[4] == PREL) field += xrplus + cbase;
+		if (rtbuf[4] == PREL) {
+		/* AORG modules: PREL values are absolute (>= PAGE_SEG), don't add cbase */
+		if (field < PAGE_SEG)
+			field += xrplus + cbase;
+		else
+			field += xrplus;
+	}
 		if (rtbuf[4] == DREL) field += xrplus + dbase;
 		xrplus = 0;
 		write99(outfd, &field, 2);
@@ -863,7 +915,13 @@ unsigned emit_page_block(pg, cloc_p, ref_p)
 		read(ctfd, rtbuf, CRELSIZE);
 		field = get16int(rtbuf + 2);
 
-		if (rtbuf[4] == PREL) field += xrplus + cbase;
+		if (rtbuf[4] == PREL) {
+		/* AORG modules: PREL values are absolute (>= PAGE_SEG), don't add cbase */
+		if (field < PAGE_SEG)
+			field += xrplus + cbase;
+		else
+			field += xrplus;
+	}
 		if (rtbuf[4] == DREL) field += xrplus + dbase;
 		xrplus = 0;
 
@@ -896,10 +954,10 @@ int main(argc, argv)
 	int argc; char **argv;
 {
 	putls("----------------------------------------------------\n");
-	putls("TMS9900 Relocatable Object Linker  Version 3.9.6\n");
+	putls("TMS9900 Relocatable Object Linker  Version 3.9.10\n");
 	putls("Original CP/M version: Alexander Cameron, January 1985\n");
 	putls("MSDOS/PC port:         Alexander Cameron, May 2010 - July 2019\n");
-	putls("Cleaner command syntax: Version 3.9.6\n");
+	putls("Cleaner command syntax: Version 3.9.9\n");
 	putls("----------------------------------------------------\n");
 
 	getsw(argc, argv);      /* parse command-line switches  */
@@ -1063,8 +1121,10 @@ void getsw(argc, argv)
 			if (toupper(arg[2]) == 'A') {          /* -PAGES#-# auto-assign      */
 				pagemode = YES;
 			} else {                               /* -P# explicit page          */
-				curpage  = arg[2] - '0';
-				if (curpage < 0 || curpage > 15)
+				/* Only set pagemode here; curpage is set sequentially
+				 * in the phase1 loop so each module gets the right page. */
+				int pg = arg[2] - '0';
+				if (pg < 0 || pg > 15)
 					usage();
 				pagemode = YES;
 			}
@@ -1167,12 +1227,19 @@ load()
 	doffloc = coffloc = -1;
 	epprev  = epfirst;
 	xrprev  = xrfirst;
+	cloc_at_ename = cloc;        /* v3.9.7: initialise here in case ENAME was pre-consumed
+	                              * by search()'s while(getrel()==ENAME) loop before load()
+	                              * was called. Without this, cmod stays at the previous
+	                              * module's load base, miscalculating all EPOINT values
+	                              * for library modules. The ENAME case below will update
+	                              * this again if ENAME is encountered inside load().     */
+	cloc_at_ename = cloc;        /* default: set now in case ENAME was pre-consumed */
 
 	do {
 		poll(YES);
 		gval = getrel();
 
-		if (monitor) {
+		if (monitor && gval >= ENAME) {    /* skip noise: ABS/PREL/DREL/CREL */
 			putls(" g=");
 			itox(gval, str, 2);
 			putls(str);
@@ -1223,7 +1290,10 @@ load()
 		case PREL:
 			/* Add the module's segment base to relocatable references.
 			 * field=0 means offset 0 within module - still needs cmod.    */
-			if (item == PREL) field += cmod;
+			/* AORG modules: PREL values are already absolute (>= PAGE_SEG).
+			 * Don't add cmod - it would double-relocate them.           */
+			if (item == PREL && field < PAGE_SEG) field += cmod;
+			if (item == PREL && field >= PAGE_SEG) ; /* already absolute */
 			if (item == DREL) field += dmod;
 
 			/* Track minimum PREL value to detect AORG base address.
@@ -1604,7 +1674,6 @@ newsym(prev, first, ts)
 #ifdef DEBUG
 	char at[9];
 #endif
-
 	if ((newent = sfree))
 		sfree = getint(sfree);  /* recycle a previously freed entry          */
 	else {
@@ -1621,7 +1690,7 @@ newsym(prev, first, ts)
 	cp = *prev;
 	while (strcmp(symbol, cp + SYM) >= 0) {
 		*prev = cp;
-		cp    = getint(cp + NXT);
+		cp = getint(cp + NXT);
 	}
 
 	putint(newent,       cp + NXT);     /* link new entry ahead               */
@@ -1734,7 +1803,7 @@ phase1(argc, argv)
 	 * cdisk is set high so all addresses are treated as in-memory until
 	 * the overflow file is actually opened.
 	 */
-	cdisk = 48128;
+	cdisk = MAXMEM;
 
 	puts("\nPhase 1 - Loading object and library files");
 
@@ -1844,7 +1913,7 @@ phase1(argc, argv)
 		{
 			char *dot;
 			dot = strchr(infn, '.');
-			if (dot && (stricmp(dot, COMEXT) == 0 || stricmp(dot, LGOEXT) == 0)) {
+			if (dot && (stricmp(dot, COMEXT) == 0 || stricmp(dot, EXEEXT) == 0 || stricmp(dot, LGOEXT) == 0)) {
 				if (!*outfn) {
 					strcpy(outfn, infn);
 					strcpy(firstfn, infn);
@@ -1887,7 +1956,7 @@ phase1(argc, argv)
 
 		if (!*outfn) {              /* first input file determines output name */
 			strcpy(firstfn, infn);  /* remember which arg set outfn           */
-			newfn(outfn, infn, lgo ? LGOEXT : COMEXT);
+			newfn(outfn, infn, lgo ? LGOEXT : (pagemode ? EXEEXT : COMEXT));
 			newfn(csfn,  infn, OFLEXT);
 			newfn(crfn,  infn, REFEXT);
 			newfn(ctfn,  infn, CRLTBEXT);
@@ -2070,7 +2139,13 @@ unsigned emit_data_block()
 		read(dtfd, rtbuf, CRELSIZE);
 		field = get16int(rtbuf + 2);
 
-		if (rtbuf[4] == PREL) field += xrplus + cbase;
+		if (rtbuf[4] == PREL) {
+		/* AORG modules: PREL values are absolute (>= PAGE_SEG), don't add cbase */
+		if (field < PAGE_SEG)
+			field += xrplus + cbase;
+		else
+			field += xrplus;
+	}
 		if (rtbuf[4] == DREL) field += xrplus + dbase;
 		xrplus = 0;
 
@@ -2092,6 +2167,242 @@ unsigned emit_data_block()
 	}
 
 	return (sz);
+}
+
+/* ==========================================================================
+ * emit_chain_blocks  -  Emit paged output as a self-describing linked-list
+ *                       block chain (v3.9.10).
+ *
+ *  Replaces emit_pagemap() + emit_page_block() loop for paged output.
+ *
+ *  Each block is written as:
+ *    next_offset  word  byte distance from start of THIS header to next header
+ *                       (0 = this is the last block)
+ *    page         word  physical page number (0-15)
+ *    start        word  virtual load address
+ *    size         word  byte count of data that follows
+ *    [data...]
+ *
+ *  The loader does a single forward pass:
+ *    1. Read 8-byte header: next_offset, page, start, size
+ *    2. Capture start from first block as launch address
+ *    3. MAP_SET(page, start>>12) if page != 0
+ *    4. PSEL on, copy size bytes to start, PSEL off
+ *    5. If next_offset == 0 -> launch; else R6 += next_offset -> loop
+ *
+ *  Format detection: first word is next_offset. For valid paged output
+ *  this is always >= 8 (header) + data, so never FFFF. The loader can
+ *  distinguish this from the old sentinel format (first word = FFFF) or
+ *  raw binary (first word = program instruction) if needed — but since we
+ *  are replacing the format entirely, the loader simply always reads it
+ *  as a chain.
+ *
+ *  Entries are emitted in the order they appear in the pmods arrays
+ *  (i.e. the order modules appeared on the command line), skipping dead
+ *  (merged-away) entries.  merge_pagemap() is called first so same-page
+ *  spans are already collapsed.
+ *
+ *  File positions of each header are saved so next_offset and size can
+ *  be patched back after each block's data is written.
+ * ======================================================================== */
+emit_chain_blocks()
+{
+	int      i, p, pg;
+	int      live[MAXPMODS];    /* indices of live (non-dead) pagemap entries */
+	int      nlive;             /* number of live entries                     */
+	long     hdrpos[MAXPMODS];  /* file position of each block's header       */
+	unsigned blksz[MAXPMODS];   /* byte count written for each block          */
+	unsigned cloc_arr[MAXPMODS];/* cloc at start of each page scan            */
+	unsigned ref_arr[MAXPMODS]; /* ref  at start of each page scan            */
+	unsigned zero, next_off, pg_word, start_word, size_word;
+	long     cur;
+	char     str[8];
+
+	/* Collect live entries in emit order */
+	merge_pagemap();
+	nlive = 0;
+	for (i = 0; i < npmods; i++) {
+		if (pmend[i] != pmstart[i])
+			live[nlive++] = i;
+	}
+
+	if (nlive == 0)
+		return (0);
+
+	/* For each live entry: scan the code image once to emit its block.
+	 * emit_page_block() already does the right thing per-page, including
+	 * the size-word placeholder/patch-back. We just need to prepend our
+	 * own header words (next_offset, page, start) around it.
+	 *
+	 * We emit ALL headers+blocks sequentially. After each block we know
+	 * its size. After all blocks we patch next_offset for each block.   */
+
+	for (p = 0; p < nlive; p++) {
+		i = live[p];
+
+		/* Save position of this block's header */
+		hdrpos[p] = lseek(outfd, 0, SEEK_CUR);
+
+		/* Write header placeholder words (patched below) */
+		zero = 0;
+		write99(outfd, &zero, 2);   /* next_offset  - patched after all blocks */
+		pg_word    = (unsigned)pmpage[i];
+		start_word = pmstart[i];
+		write99(outfd, &pg_word,    2);   /* page  */
+		write99(outfd, &start_word, 2);   /* start */
+		write99(outfd, &zero,       2);   /* size  - patched below               */
+
+		/* Reset code image scan to start of this page's data */
+		cloc    = 0;
+		crelptr = 1;
+		ref     = readref();
+		xrplus  = 0;
+		if (csfd) rewind(csfd);
+
+		/* Emit this page's block data (size word already handled inside
+		 * emit_page_block via szpos, but we wrote our own size placeholder
+		 * above — so we need the raw byte count back).
+		 * emit_page_block writes its own size word first, which we don't
+		 * want here (we already wrote our header size slot). We call it
+		 * and let it write its internal size word as a temporary, then
+		 * patch ours from the return value and seek back to remove the
+		 * internal one.
+		 *
+		 * Cleaner: call emit_page_block but patch back over its size word
+		 * with ours. Since emit_page_block writes [size:2][data], and our
+		 * header already has the size slot, we record the file position
+		 * before the call, call it (which writes size+data), then copy
+		 * the size value into our header slot and shift data up — too
+		 * complex.
+		 *
+		 * Simplest correct approach: save the file position after our
+		 * header, call emit_page_block (which writes its own [size][data]),
+		 * read back the size word it wrote, patch our header size slot,
+		 * then the data bytes are already in the right place — the only
+		 * redundancy is the extra size word emit_page_block wrote.
+		 * We remove it by seeking back and shifting, which is messy.
+		 *
+		 * Best approach: inline the emit loop here without the internal
+		 * size word, using the same logic as emit_page_block().           */
+
+		blksz[p] = emit_page_block_data(i, &cloc, &ref);
+
+		/* Patch our header's size word */
+		cur = lseek(outfd, 0, SEEK_CUR);
+		lseek(outfd, hdrpos[p] + 6, SEEK_SET);   /* size is at offset 6 in header */
+		size_word = blksz[p];
+		write99(outfd, &size_word, 2);
+		lseek(outfd, cur, SEEK_SET);
+
+		if (monitor) {
+			putls("\n\tCHAIN BLOCK pg=");
+			itox(pmpage[i],  str, 3); putls(str);
+			putls(" start=");
+			itox(pmstart[i], str, 5); putls(str);
+			putls(" size=");
+			itox(blksz[p],   str, 6); putls(str);
+		}
+	}
+
+	/* Now patch next_offset for each block.
+	 * next_offset[p] = distance in bytes from hdrpos[p] to hdrpos[p+1].
+	 * Last block gets next_offset = 0.                                   */
+	for (p = 0; p < nlive; p++) {
+		if (p < nlive - 1)
+			next_off = (unsigned)(hdrpos[p + 1] - hdrpos[p]);
+		else
+			next_off = 0;
+		cur = lseek(outfd, 0, SEEK_CUR);
+		lseek(outfd, hdrpos[p], SEEK_SET);
+		write99(outfd, &next_off, 2);
+		lseek(outfd, cur, SEEK_SET);
+	}
+}
+
+/* ==========================================================================
+ * emit_page_block_data  -  Emit one page's data bytes only (no size word).
+ *
+ *  Same logic as emit_page_block() but without the leading size word.
+ *  Called by emit_chain_blocks() which manages its own header.
+ *
+ *  Entry:  idx      = index into pmods arrays for the page to emit
+ *          cloc_p   = pointer to current code location counter (reset by caller)
+ *          ref_p    = pointer to current relocation reference  (reset by caller)
+ *  Exit:   returns number of data bytes written
+ * ======================================================================== */
+unsigned emit_page_block_data(idx, cloc_p, ref_p)
+	int      idx;
+	unsigned *cloc_p;
+	unsigned *ref_p;
+{
+	unsigned  szsave, tp;
+	char      rtbuf[CRELSIZE];
+	int       pg;
+
+	pg     = pmpage[idx];
+	szsave = 0;
+
+	while (*cloc_p < csize) {
+
+		/* Skip bytes not belonging to this page */
+		if (!in_page(*cloc_p, pg)) {
+			if (*cloc_p < cdisk)
+				(*cloc_p)++;
+			else {
+				read(csfd, &field, 1);
+				(*cloc_p)++;
+			}
+			if (*cloc_p - 1 == *ref_p) {
+				if (*cloc_p < cdisk)
+					(*cloc_p)++;
+				else {
+					read(csfd, &tp, 2);
+					(*cloc_p)++;
+				}
+				*ref_p = readref();
+			}
+			continue;
+		}
+
+		if (*cloc_p != *ref_p) {
+			/* Non-relocatable byte */
+			if (*cloc_p < cdisk)
+				field = *(buffer + *cloc_p);
+			else
+				read(csfd, &field, 1);
+			write(outfd, &field, 1);
+			szsave++;
+			(*cloc_p)++;
+			continue;
+		}
+
+		/* Relocatable word */
+		if (*cloc_p < cdisk)
+			tp = get16int(buffer + *cloc_p);
+		else
+			read(csfd, &tp, 2);
+
+		ctseek(tp);
+		read(ctfd, rtbuf, CRELSIZE);
+		field = get16int(rtbuf + 2);
+
+		if (rtbuf[4] == PREL) {
+		/* AORG modules: PREL values are absolute (>= PAGE_SEG), don't add cbase */
+		if (field < PAGE_SEG)
+			field += xrplus + cbase;
+		else
+			field += xrplus;
+	}
+		if (rtbuf[4] == DREL) field += xrplus + dbase;
+		xrplus = 0;
+
+		write99(outfd, &field, 2);
+		szsave  += 2;
+		*cloc_p += 2;
+		*ref_p   = readref();
+	}
+
+	return (szsave);
 }
 
 /* ==========================================================================
@@ -2120,8 +2431,6 @@ phase2()
 	char  at[6], sz[8];
 	char *epnext2;                  /* walks ep table to find main()        */
 	char  mainname[MAXSYM + 1];
-	int   pglist[16];               /* unique page numbers in emit order    */
-	int   npages, p, i, found;     /* page-block loop variables            */
 	strcpy(mainname, "main");
 
 	puts("\n\nPhase 2 - Writing execution files\n");
@@ -2149,12 +2458,8 @@ phase2()
 			error2("Error opening destination: ", outfn);
 	}
 
-	/* Write pagemap prefix then page-separated code blocks (v3.8).
-	 * emit_pagemap() writes the table + sentinel.
-	 * emit_page_block() writes [size:word][bytes] for each page.
-	 * Non-paged: sentinel only, then one block for all code+data.       */
-	if (pagemode)
-		emit_pagemap();
+	/* Paged output uses emit_chain_blocks() below — self-describing format.
+	 * Non-paged output uses emit_raw_block() below.                        */
 
 	/*
 	 * Write the program header.
@@ -2198,32 +2503,9 @@ phase2()
 			emit_data_block();
 		}
 	} else {
-		/* --- Paged: one block per unique page number ---               */
-		/* Collect unique page numbers in the order they appear          */
-		npages = 0;
-
-		for (i = 0; i < npmods; i++) {
-			if (pmend[i] == pmstart[i]) continue;   /* dead entry       */
-			found = NO;
-			for (p = 0; p < npages; p++)
-				if (pglist[p] == pmpage[i]) { found = YES; break; }
-			if (!found && npages < 16)
-				pglist[npages++] = pmpage[i];
-		}
-
-		/* Emit one block per page in page-number order                  */
-		for (p = 0; p < npages; p++) {
-			/* Reset code image scan to start for each page.
-			 * The code image is scanned sequentially; bytes not in
-			 * this page are skipped by emit_page_block().               */
-			cloc    = 0;
-			crelptr = 1;
-			ref     = readref();
-			xrplus  = 0;
-			if (csfd) rewind(csfd);
-
-			emit_page_block(pglist[p], &cloc, &ref);
-		}
+		/* --- Paged: linked-list block chain (v3.9.10) ---             */
+		/* emit_pagemap() call removed: format is now self-describing.  */
+		emit_chain_blocks();
 	}
 
 
@@ -2358,6 +2640,7 @@ resolve()
 	unsigned prev_xrloc;          /* detect repeating chain locations   */
 	char rtbuf[CRELSIZE];           /* scratch for one relocation table entry */
 	char at[7];
+	char str[9];
 	int  rdebug;
 	rdebug = 1;
 	prev_xrloc = 0;
@@ -2366,6 +2649,7 @@ resolve()
 		return;
 
 	epval = getint(epnext + VAL);
+
 	xt    = *(xrnext + FLG);
 	et    = *(epnext + FLG);
 
@@ -2439,7 +2723,10 @@ resolve()
 		/* ---- Program-relative reference ---------------------------------- */
 		case PREL:
 			/* xrloc is virtual addr for AORG modules, buffer offset for relocatable */
-			xbuf = (xrloc >= cbase) ? (xrloc - cbase) : xrloc;
+			/* line 2442 - WRONG: subtracts cbase from a buffer-relative offset */
+		/*	xbuf = (xrloc >= cbase) ? (xrloc - cbase) : xrloc; */
+			/* xrloc is virtual for AORG/cbase>0 modules; convert to buffer offset */
+			xbuf = (xrloc >= cbase) ? xrloc - cbase : xrloc;
 			if (xbuf < cdisk) {
 				/* Location is in the in-memory code buffer                   */
 				tp = get16int(buffer + xbuf);
