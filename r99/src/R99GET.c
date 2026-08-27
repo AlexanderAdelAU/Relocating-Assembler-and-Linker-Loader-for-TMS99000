@@ -4,7 +4,7 @@
  January, 1985
 
  Original 6800 version Copyright (c) 1980 William C. Colley, III.
- Modified for the TMS9900/99105  Series by Alexander Cameron.
+ Modified for the TMS9900/99105A  Series by Alexander Cameron.
 
  File:	a99get.c
 
@@ -13,8 +13,137 @@
  */
 
 /*  Get Globals:  */
-#include "r99gbl.h"
-#include "r99ext.h"
+#include "R99gbl.h"
+#include "R99Ext.h"
+#include "fcntl.h"
+
+/*  Include-file source stack.  INCLUDE is implemented below the line reader,
+    so the rest of the assembler still sees one continuous source stream. */
+
+#define INCFNLEN 64
+
+struct source_ctx {
+	int fd;
+	int pointr_offset;
+	int endpoint_offset;
+	unsigned char space[BUFSIZE];
+};
+
+struct source_ctx srcstack[INCLUDE_DEPTH];
+int srcsp = 0;
+
+save_source(ctx)
+struct source_ctx *ctx;
+{
+	ctx->fd = sorbuf.fd;
+	ctx->pointr_offset = sorbuf.pointr - sorbuf.space;
+	ctx->endpoint_offset = sorbuf.endpoint - sorbuf.space;
+	memcpy(ctx->space, sorbuf.space, BUFSIZE);
+}
+
+restore_source(ctx)
+struct source_ctx *ctx;
+{
+	sorbuf.fd = ctx->fd;
+	memcpy(sorbuf.space, ctx->space, BUFSIZE);
+	sorbuf.pointr = sorbuf.space + ctx->pointr_offset;
+	sorbuf.endpoint = sorbuf.space + ctx->endpoint_offset;
+}
+
+start_source_fd(fd)
+int fd;
+{
+	sorbuf.fd = fd;
+	sorbuf.pointr = sorbuf.space;
+	sorbuf.endpoint = sorbuf.space + BUFSIZE;
+	sorbuf.pointr = sorbuf.endpoint;       /* force a read on next movchr() */
+}
+
+push_source(fname)
+char *fname;
+{
+	int fd;
+
+	if (srcsp >= INCLUDE_DEPTH)
+		wipeout("\nInclude nesting overflow.\n");
+
+	if ((fd = open(fname, 0)) == -1) {
+		printf("\nCan't open include file: %s\n", fname);
+		markerr('F');
+		return 0;
+	}
+
+	save_source(&srcstack[srcsp++]);
+	start_source_fd(fd);
+	return 1;
+}
+
+pop_source()
+{
+	if (srcsp == 0)
+		return 0;
+	close(sorbuf.fd);
+	restore_source(&srcstack[--srcsp]);
+	return 1;
+}
+
+close_includes()
+{
+	while (srcsp != 0) {
+		close(sorbuf.fd);
+		restore_source(&srcstack[--srcsp]);
+	}
+}
+
+include_source()
+{
+	char c, d, quote, fname[INCFNLEN], *fp;
+	unsigned char attr;
+	unsigned dummy;
+
+	hexflg = NOCODE;
+	fp = fname;
+	*fp = '\0';
+
+	attr = getchr(&c, SKIP);
+	if (attr == END_LIN) {
+		markerr('S');
+		return 0;
+	}
+
+	if (attr == QUOTE) {
+		quote = c;
+		while ((d = *linptr++) != quote && d != '\n' && d != '\0') {
+			if (fp < fname + INCFNLEN - 1)
+				*fp++ = d;
+		}
+		if (d != quote)
+			markerr('"');
+	} else {
+		backchr;
+		while ((d = *linptr) != '\n' && d != '\0' && d != ';' && d != ','
+				&& d != ' ' && d != '\t') {
+			if (fp < fname + INCFNLEN - 1)
+				*fp++ = d;
+			linptr++;
+		}
+	}
+	*fp = '\0';
+
+	if (fname[0] == '\0') {
+		markerr('S');
+		return 0;
+	}
+
+	if (getitem(&dummy, SMALST) != END_LIN)
+		markerr('T');
+
+	if (errcode != ' ')
+		return 0;
+
+	return push_source(fname);
+}
+
 
 /* Function to get an opcode from the present source line and return
  its value and attributes.  The function returns -1 if no opcode was
@@ -23,8 +152,9 @@
  error is marked up.
  */
 
-int getopcod(unsigned short *value, char *attrib)
-
+getopcod(value, attrib)
+unsigned *value;
+char *attrib;
 {
 	char c, dxop[2 * SYMLEN], temp[SYMLEN + 1];
 
@@ -68,15 +198,21 @@ int getopcod(unsigned short *value, char *attrib)
  upper case.
  */
 
-int bbsearch(char *name, unsigned *value, unsigned *attrib, int low, int high,
-		void (*table)()) {
+bbsearch(name, value, attrib, low, high, table)
+char *name;
+unsigned *value;
+unsigned *attrib;
+int low;
+int high;
+int (*table)();
+{
 	char temp[5];
 	char *pntr1, *pntr2;
 	int t, check;
 	if (low > high)
 		return 0;
 	check = low + ((high - low) >> 1);
-	(*table)(check, &temp, value, attrib);
+	table(check, temp, value, attrib);
 	pntr1 = temp;
 	pntr2 = name;
 	while ((t = toupper(*pntr2++) - *pntr1) == 0 && *pntr1++ != '\0')
@@ -93,8 +229,9 @@ int bbsearch(char *name, unsigned *value, unsigned *attrib, int low, int high,
  a second time.  Only one level of pushback is supported.
  */
 
-void backitem(int value, unsigned attrib)
-/* unsigned short value, attrib; */
+backitem(value, attrib)
+int value;
+unsigned attrib;
 {
 	oldvalu = value;
 	oldattr = attrib;
@@ -106,7 +243,10 @@ void backitem(int value, unsigned attrib)
  is passed so that this routine can check for digits larger than the base.
  */
 
-int _aton(char letter, unsigned short base) {
+_aton(letter, base)
+char letter;
+unsigned base;
+{
 	char n;
 	if (letter >= '0' && letter <= '9')
 		n = letter - '0';
@@ -132,9 +272,12 @@ int _aton(char letter, unsigned short base) {
  as it goes along.
  */
 
-short int getnum(unsigned short *number, unsigned char *base) {
+getnum(number, base)
+unsigned *number;
+unsigned char *base;
+{
 	char c1, c2;
-	unsigned short b;
+	unsigned b;
 	/*	return 0xffff; */
 	if ((c1 = getchr(&c2, NOSKIP)) != ALPHA && c1 != NUMERIC) {
 		backchr;
@@ -174,8 +317,9 @@ short int getnum(unsigned short *number, unsigned char *base) {
  constants or not.
  */
 
-unsigned char getitem(unsigned short *value, unsigned char quoteflg)
-
+getitem(value, quoteflg)
+unsigned *value;
+unsigned char quoteflg;
 {
 	char c, c1, *tmpptr, tempbuf[2 * SYMLEN];
 	unsigned char base, attrib;
@@ -267,15 +411,16 @@ unsigned char getitem(unsigned short *value, unsigned char quoteflg)
 		strcat(tempbuf, PADDING);
 		switch (slookup(tempbuf)) {
 		case 0:
-			/* this returns the original value - for EXTBITs it will be zero */
 			*value = sympoint->symvalu;
 			if (pass == 2) {
-				if (sympoint->symflg & EXTBIT) { /* If it was marked external now make it relocatable */
-					sympoint->symvalu = pc + nbytes - 2; /*  set new chain link - 2 is for opcode */
-					sympoint->symflg |= RELBIT;
-				/*	if (*value) */
-				/*		sympoint->symflg |= RELBIT;  */	/* last item in chain link must remain zero */
-				} 		/* however other links in chain must be relocatable */
+				if (sympoint->symflg & EXTBIT) {
+					/* XREFS: record an explicit reference location and
+					 * leave an ABS 0 placeholder.  No in-code chain, and
+					 * NO RELBIT - so R99ASMLN emits the operand as ABS and
+					 * the linker patches it with the resolved address. */
+					xref_add(sympoint->symname, pc + nbytes - 2);
+					*value = 0;
+				}
 				itemflg[0] |= sympoint->symflg; /* assume REL & XXX = REL */
 				symptr[0] = &(sympoint->symname);
 				relflg = sympoint->symflg & RELBIT;
@@ -310,8 +455,8 @@ unsigned char getitem(unsigned short *value, unsigned char quoteflg)
  generate a zero value in the object, and an 'X' indicator in the REL
  file output.
  */
-void getname(char *buffer)
-/* char *buffer; */
+getname(buffer)
+char *buffer;
 {
 	char c, d, count;
 	count = 0;
@@ -358,8 +503,10 @@ void getname(char *buffer)
  string is an operator, the token NO_OPR otherwise.
  */
 
-short int chkoprat(char *string) {
-	short int t;
+chkoprat(string)
+char *string;
+{
+	int t;
 
 	t = 0;
 	return NO_OPR;
@@ -374,7 +521,10 @@ short int chkoprat(char *string) {
  determines whether or not white space is skipped.
  */
 
-unsigned char getchr(char *value, unsigned char skipflg) {
+getchr(value, skipflg)
+char *value;
+unsigned char skipflg;
+{
 	unsigned char c;
 	while (TRUE) {
 		c = getattr(*value = *linptr++);
@@ -389,34 +539,41 @@ unsigned char getchr(char *value, unsigned char skipflg) {
  if EOF encountered, 1 otherwise.
  */
 
-short int getlin() {
+getlin()
+{
 	char c;
-	short int count;
-	linptr = linbuf;
-	count = 0;
-	backflg = FALSE;
-	while (movchr(&c)) {
-		if (c == '\n') {
-			*linptr++ = c;
-			*linptr = '\0';
-			linptr = linbuf;
-			return 1;
-		}
-		if (count < LINLEN)
-			*linptr++ = c;
-		count++;
-	}
+	int count;
 
-	return 0;
+	while (TRUE) {
+		linptr = linbuf;
+		count = 0;
+		backflg = FALSE;
+		while (movchr(&c)) {
+			if (c == '\n') {
+				*linptr++ = c;
+				*linptr = '\0';
+				linptr = linbuf;
+				return 1;
+			}
+			if (count < LINLEN - 2)
+				*linptr++ = c;
+			count++;
+		}
+
+		/* EOF on an INCLUDE returns to the including file. */
+		if (!pop_source())
+			return 0;
+	}
 }
 /*
  Function to flush rest of line - called after assembly is complete for a
  particular line, for example multiple comment fields on the same line
  */
 
-short int flushlin() {
+flushlin()
+{
 	char c;
-	short int count;
+	int count;
 	linptr = linbuf;
 	count = 0;
 	backflg = FALSE;
@@ -440,8 +597,10 @@ short int flushlin() {
  location dest.  Returns 0 if no character available, 1 otherwise.
  */
 
-int movchr(char *dest) {
-	int short t;
+movchr(dest)
+char *dest;
+{
+	int t;
 	t = 0;
 
 	/*	if (sorbuf.pointr >= sorbuf.space + 128) */
@@ -462,7 +621,11 @@ int movchr(char *dest) {
 	return ((*dest = *sorbuf.pointr++ & 0x7f) == CPMEOF) ? 0 : 1;
 }
 
-int seek(int short fd, int short i, int short j) {
+seek(fd, i, j)
+int fd;
+int i;
+int j;
+{
 
 	lseek(sorbuf.fd, 0, 0);
 
@@ -471,10 +634,10 @@ int seek(int short fd, int short i, int short j) {
  Function to rewind the source file.
  */
 
-void source_rewind() {
+source_rewind() {
+	close_includes();
 	seek(sorbuf.fd, 0, 0);
 	sorbuf.pointr = sorbuf.space; /* this forces a read */
 	sorbuf.endpoint = sorbuf.space + BUFSIZE;
 	sorbuf.pointr = sorbuf.endpoint;
 }
-

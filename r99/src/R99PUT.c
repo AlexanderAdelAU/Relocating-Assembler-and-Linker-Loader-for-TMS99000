@@ -13,17 +13,17 @@
 
 /*  Get globals:  */
 
-#include "r99gbl.h"
-#include "r99ext.h"
+#include "R99gbl.h"
+#include "R99Ext.h"
 
 /*
  Function to form the list output line and put it to
  the list device.  Routine also puts the line to the
  console in the event of an error.
  */
-void lineout() {
+lineout() {
 	char tbuf[25], *tptr, *bptr, conbuf[LINLEN];
-	short int count, test;
+	int count, test;
 	memset(tbuf, ' ', 24);
 	tbuf[24] = '\0';
 	memset(conbuf, '\0', LINLEN);
@@ -31,10 +31,28 @@ void lineout() {
 	*tptr++ = errcode;
 	tptr++;
 	if (hexflg != NOCODE)
-		puthex4(address, &tptr);
+		tptr = puthex4(address, tptr);
 	else
 		tptr += 4;
 	tptr += 3;
+
+	/*
+	 * BSS uses hexflg == FLUSH and nbytes as the amount by which the
+	 * relocatable location counter advances.  Those bytes do not exist
+	 * in binbuf, so listing them would read beyond the encoding buffer.
+	 */
+	if (hexflg == FLUSH) {
+		putlin(tbuf, &lstbuf);
+		putlin(linbuf, &lstbuf);
+
+		if (lstbuf.fd != CONO && errcode != ' ') {
+			strcat(conbuf, tbuf);
+			strcat(conbuf, linbuf);
+			puts(conbuf);
+		}
+		return;
+	}
+
 	count = 0;
 	bptr = binbuf;
 	while (TRUE) {
@@ -57,7 +75,7 @@ void lineout() {
 				puts(conbuf);
 			}
 			tptr = tbuf + 2;
-			puthex4(address, &tptr);
+			tptr = puthex4(address, tptr);
 			memset(tptr, ' ', 14);
 			tptr += 3;
 		}
@@ -65,7 +83,7 @@ void lineout() {
 			return;
 		count++;
 		address++;
-		puthex2(*bptr++, &tptr);
+		tptr = puthex2(*bptr++, tptr);
 		if (count % 2 == 0)
 			tptr++;
 	}
@@ -76,16 +94,16 @@ void lineout() {
  the hex output device.
  */
 
-void hexout8() {
+hexout8() {
 	char *bptr, reclen;
-	unsigned short count;
+	unsigned count;
 	reclen = 16;
 	switch (hexflg) {
 
 	case PUTCODE:
 		bptr = binbuf;
 		for (count = 1; count <= nbytes; count++) {
-			puthex2(*bptr, &hxlnptr);
+			hxlnptr = puthex2(*bptr, hxlnptr);
 			chksum += *bptr++;
 
 			if (++hxbytes == reclen)
@@ -112,7 +130,7 @@ void hexout8() {
  We need to add High and Low sements as well
  */
 
-void hexout16() {
+hexout16() {
 	char count, *bptr, reclen;
 	reclen = 32;
 	switch (hexflg) {
@@ -125,7 +143,7 @@ void hexout16() {
 	case PUTCODE:
 		bptr = binbuf;
 		for (count = 1; count <= nbytes; count++) {
-			puthex2(*bptr, &hxlnptr);
+			hxlnptr = puthex2(*bptr, hxlnptr);
 			chksum += *bptr++;
 			if (++hxbytes == reclen)
 				flshhbf(pc + count);
@@ -151,21 +169,23 @@ void hexout16() {
  device and get a new line started.
  */
 
-void flshhbf(unsigned short loadaddr) {
+flshhbf(loadaddr)
+unsigned loadaddr;
+{
 	if (hxbytes != 0) {
-		puthex2(-(chksum + hxbytes), &hxlnptr);
+		hxlnptr = puthex2(-(chksum + hxbytes), hxlnptr);
 		*hxlnptr++ = '\n';
 		*hxlnptr++ = '\0';
 		hxlnptr = hxlnbuf + 1;
-		puthex2(hxbytes, &hxlnptr);
+		hxlnptr = puthex2(hxbytes, hxlnptr);
 		putlin(hxlnbuf, &hexbuf);
 	}
 	hxbytes = 0;
 	hxlnptr = hxlnbuf;
 	*hxlnptr++ = ':';
 	hxlnptr += 2;
-	puthex4(loadaddr, &hxlnptr);
-	puthex2(0, &hxlnptr);
+	hxlnptr = puthex4(loadaddr, hxlnptr);
+	hxlnptr = puthex2(0, hxlnptr);
 	chksum = (loadaddr >> 8) + (loadaddr & 0xff);
 }
 
@@ -173,36 +193,44 @@ void flshhbf(unsigned short loadaddr) {
  Function to put a 4-digit hex number into an output line.
  */
 
-void puthex4(unsigned short number, char **lineptr) {
-	puthex2(number >> 8, lineptr);
-	puthex2(number, lineptr);
+puthex4(number, lineptr)
+unsigned number;
+char *lineptr;
+{
+	lineptr = puthex2(number >> 8, lineptr);
+	return puthex2(number, lineptr);
 }
 
 /*
  Function to put a 2-digit hex number into an output line.
  */
 
-void puthex2(unsigned char number, char **lineptr) {
-
-	if ((**lineptr = (number >> 4) + '0') > '9')
-		**lineptr += 7;
-	if ((*++*lineptr = (number & 0x0f) + '0') > '9')
-		**lineptr += 7;
-	++(*lineptr);
+puthex2(number, lineptr)
+unsigned char number;
+char *lineptr;
+{
+	if ((*lineptr = (number >> 4) + '0') > '9')
+		*lineptr += 7;
+	lineptr++;
+	if ((*lineptr = (number & 0x0f) + '0') > '9')
+		*lineptr += 7;
+	lineptr++;
+	return lineptr;
 }
 
 /*
  Function to put a decimal number into an output line.
  */
 
-void putdec(unsigned number, char **lineptr)
-/* unsigned short number;
- char **lineptr; */
+putdec(number, lineptr)
+unsigned number;
+char *lineptr;
 {
 	if (number == 0)
-		return;
-	putdec(number / 10, lineptr);
-	*(*lineptr)++ = number % 10 + '0';
+		return lineptr;
+	lineptr = putdec(number / 10, lineptr);
+	*lineptr++ = number % 10 + '0';
+	return lineptr;
 }
 
 /*
@@ -211,7 +239,10 @@ void putdec(unsigned number, char **lineptr)
  structure dskbuf.
  */
 
-putlin(char *line, struct diskbuf *dskbuf) {
+putlin(line, dskbuf)
+char *line;
+struct diskbuf *dskbuf;
+{
 	while (*line != '\0')
 		putchr(*line++, dskbuf);
 }
@@ -223,7 +254,10 @@ putlin(char *line, struct diskbuf *dskbuf) {
  CR/LF pairs.
  */
 
-void putchr(char byte, struct diskbuf *dskbuf) {
+putchr(byte, dskbuf)
+char byte;
+struct diskbuf *dskbuf;
+{
 	char c;
 	/* byte &= 0x7f; */
 	if (kbhit()) {
@@ -268,7 +302,10 @@ void putchr(char byte, struct diskbuf *dskbuf) {
 
 	}
 }
-void rputchr(unsigned char byte, struct diskbuf *dskbuf) {
+rputchr(byte, dskbuf)
+unsigned char byte;
+struct diskbuf *dskbuf;
+{
 	if (dskbuf->fp >= 20) {
 		printf("In rputchr fd=%u\n", dskbuf->fp);
 		return;
@@ -288,8 +325,10 @@ void rputchr(unsigned char byte, struct diskbuf *dskbuf) {
  Function to flush a disk buffer.
  */
 
-void flush(struct diskbuf *dskbuf) {
-	unsigned int t;
+flush(dskbuf)
+struct diskbuf *dskbuf;
+{
+	unsigned t;
 	if (dskbuf->fd < LODISK)
 		return;
 	t = dskbuf->pointr - dskbuf->space;
@@ -306,9 +345,11 @@ void flush(struct diskbuf *dskbuf) {
  Function to flush a disk buffer.
  */
 
-void rflush(struct diskbuf *dskbuf) {
-	unsigned int t;
-	unsigned short sz;
+rflush(dskbuf)
+struct diskbuf *dskbuf;
+{
+	unsigned t;
+	unsigned sz;
 	sz = sizeof(char);
 	if (dskbuf->fp < LODISK)
 		return;

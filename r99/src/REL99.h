@@ -1,8 +1,8 @@
 /*
- ** rel.h -- header for REL file processing
- */
+** rel.h -- header for REL file processing
+*/
 
-/* item-type codes */
+			/* item-type codes */
 
 #define ABS       0	/* absolute item */
 #define PREL      1	/* program (code) relative item */
@@ -28,6 +28,11 @@
 #define EPROG    18	/* end of program */
 #define EFILE    19	/* end of file */
 
-#define MAXSYM    10 /* maximum symbol length allowed in REL file */
-#define BITPSYM	  4 /* number of bits per symbol  MAXSYM = 2^BITPSYM */
+#define MAXSYM   15	/* maximum symbol length allowed in REL file */
 #define ONES     0xffff	/* all one bits */
+
+/* Extensions used by the current R99 source. */
+#define BITPSYM          4
+#define MAXSYM99        15
+#define AORG_MARK        SETLC
+#define REL99_EXT_XREFS  "XREFS           "

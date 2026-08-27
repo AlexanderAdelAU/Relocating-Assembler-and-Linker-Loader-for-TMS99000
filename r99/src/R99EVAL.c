@@ -15,8 +15,8 @@
 
 /*  Get Globals:  */
 
-#include "r99gbl.h"
-#include "r99ext.h"
+#include "R99gbl.h"
+#include "R99Ext.h"
 
 /*
  Function to evaluate the next expression on the present source line.
@@ -26,10 +26,10 @@
  of the recursion.  In the first call to the routine, use START.
  */
 
-short int eval(unsigned char prec)
-
+eval(prec)
+unsigned char prec;
 {
-	short int valu1, valu2;
+	int valu1, valu2;
 
 	valu1 = valu2 = 0;
 	while (TRUE) {
@@ -224,8 +224,8 @@ short int eval(unsigned char prec)
  Function returns the precedence value.
  */
 
-unsigned char getprec(char operator)
-
+getprec(operator)
+char operator;
 {
 	switch (operator) {
 	case '*':
@@ -269,8 +269,8 @@ unsigned char getprec(char operator)
  through letter.
  */
 
-void markerr(char letter)
-
+markerr(letter)
+char letter;
 {
 	if (errcode == ' ') {
 		errcode = letter;

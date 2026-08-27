@@ -13,24 +13,27 @@
 /*  Get globals:  */
 
 #include "stdio.h"
-#include "r99gbl.h"
-#include "R99ext.h"
+#include "R99gbl.h"
+#include "R99Ext.h"
 #include "fcntl.h"
 
 /*  The assembler starts here.  */
 
-main(short int argc, char *argv[]) {
-	short int n, m;
-	unsigned short u;
-	putls("\n---------------------------------------------");
-	putls("\nTMS9900 Relocatable Cross-Assembler  vers 1.0\n");
+main(argc, argv)
+int argc;
+int *argv;
+{
+	int n, m;
+	unsigned u;
+	putls("\n----------------------------------------------");
+	putls("\nTMS9900 Relocatable Cross-Assembler  vers 2.0\n");
 	putls("Copyright (c) 1980  William C. Colley, III\n");
 	putls("(TMS 99105A version by Alexander. Cameron Jan 1984 and May 2015 )\n");
-	putls("---------------------------------------------\n");
+	putls("----------------------------------------------\n");
 	setfiles(argc, argv);
 
-	sympoint = &symtbl; /*  Initialize symbol table.	*/
-	symend = symtbl[SYMBOLS].symname;
+	sympoint = symtbl; /*  Initialize symbol table.	*/
+	symend = symtbl + SYMBOLS;
 	memset(sympoint, '\0', (SYMBOLS * (sizeof(symtbl) / SYMBOLS))); /* symflg added  */
 	memset(itemflg, '\0', 3); /*  Initialize encode buffer	*/
 	memset(symptr, '\0', 3);
@@ -66,12 +69,10 @@ main(short int argc, char *argv[]) {
 		}
 	}
 	/*  print statistics  */
-
 	printf("Programme size = %d  %x%s\n", progsize, progsize, "(Hex)");
 	u = (SYMBOLS - nssymbols);
 	u = 100 * u / SYMBOLS;
 	printf("\nSymbol table use factor = %d%s\n", 100 - u, "%");
-	/*	printf("Symbol table use factor = %d%s\n",100-u,"%"); */
 
 	/*  List number of errors.	*/
 
@@ -80,7 +81,7 @@ main(short int argc, char *argv[]) {
 	if (errcount == 0)
 		strcpy(linptr, "No");
 	else {
-		putdec(errcount, &linptr);
+		linptr = putdec(errcount, linptr);
 		*linptr = '\0';
 	}
 	strcat(linbuf, " error(s).\n");
@@ -92,32 +93,29 @@ main(short int argc, char *argv[]) {
 	if (lstbuf.fd != NOFILE) /*  If needed, sort and list
 	 symbol table.		*/
 	{
-		/* n = sortsym(SORT); */
-
 		n = nssymbols;
-		sympoint = symtbl; 
+		sympoint = symtbl;
 		while (n > 0) {
 			linptr = linbuf;
 			for (m = 0; m < 4; m++) {
-				memcpy(linptr, sympoint->symname, SYMLEN); 
-				linptr += SYMLEN;
+				memcpy(linptr, sympoint->symname, SYMLEN);
+				linptr += SYMLEN;					/* Don't know why this works */
 				*linptr++ = ' ';
-				//*linptr++ = ' ';
-				puthex4(sympoint->symvalu, &linptr);
+				*linptr++ = ' ';
+				linptr = puthex4(sympoint->symvalu, linptr);
 				if (sympoint->symflg & EXTBIT)
 					*linptr++ = '*'; /* mark external */
 				else if (sympoint->symflg & RELBIT)
 					*linptr++ = '\''; /* mark relocatable */
 				else
 					*linptr++ = ' ';
-				//*linptr++ = ' ';
-				//*linptr++ = ' ';
+
+				*linptr++ = ' ';
 				*linptr++ = ' ';
 				sympoint++;
 				if (--n <= 0)
 					break;
 			}
-			linptr -= 4;
 			*linptr++ = '\n';
 			*linptr = '\0';
 			putlin(linbuf, &lstbuf);
@@ -126,7 +124,7 @@ main(short int argc, char *argv[]) {
 	}
 	flush(&lstbuf);
 	close(sorbuf.fd);
-	wipeout("\r");
+	//wipeout("\r");
 }
 
 /*
@@ -134,9 +132,12 @@ main(short int argc, char *argv[]) {
  the original argc and argv from main().
  */
 
-setfiles(short int argc, char *argv[]) {
+setfiles(argc, argv)
+int argc;
+int *argv;
+{
 
-	char sorfname[24], lstfname[24], hexfname[24], *tptr;
+	char sorfname[24], lstfname[24], hexfname[24], *tptr, *arg;
 	FILE fp;
 	if (--argc == 0)
 		wipeout("\nNo file info supplied.\n");
@@ -147,8 +148,9 @@ setfiles(short int argc, char *argv[]) {
 	sorfname[0] = curdrive + 'A';
 	sorfname[1] = ':';
 	sorfname[2] = '\0';
-	strcpy(progname, *argv); /* copy programme name */
-	strcat(sorfname, *argv++);
+	arg = *argv++;
+	strcpy(progname, arg); /* copy programme name */
+	strcat(sorfname, arg);
 	for (tptr = sorfname; *tptr != '\0'; tptr++)
 		if (*tptr == '.')
 			*tptr = '\0';
@@ -159,15 +161,16 @@ setfiles(short int argc, char *argv[]) {
 	strcat(hexfname, ".R99");
 	if (--argc == 0)
 		goto defsorf;
-	while (**argv != '\0') {
-		switch (*(*argv)++) {
+	arg = *argv;
+	while (*arg != '\0') {
+		switch (*arg++) {
 		case 'S':
-			switch (*(*argv)++) {
+			switch (*arg++) {
 			case 'A':
 			case 'B':
 			case 'C':
 			case 'D':
-				sorfname[0] = *(*argv - 1);
+				sorfname[0] = *(arg - 1);
 
 			case '-':
 				if ((sorbuf.fd = open(sorfname, _O_RDWR)) == -1)
@@ -181,12 +184,12 @@ setfiles(short int argc, char *argv[]) {
 			break;
 
 		case 'L':
-			switch (*(*argv)++) {
+			switch (*arg++) {
 			case 'A':
 			case 'B':
 			case 'C':
 			case 'D':
-				lstfname[0] = *(*argv - 1);
+				lstfname[0] = *(arg - 1);
 			case '-':
 				if ((lstbuf.fd = open(lstfname, _O_RDWR | _O_CREAT | _O_BINARY,
 						0664)) == -1)
@@ -207,15 +210,15 @@ setfiles(short int argc, char *argv[]) {
 			break;
 
 		case 'H':
-			switch (*(*argv)++) {
+			switch (*arg++) {
 			case 'A':
 			case 'B':
 			case 'C':
 			case 'D':
-				hexfname[0] = *(*argv - 1);
+				hexfname[0] = *(arg - 1);
 			case '-': /*if (( hexbuf.fd = open(hexfname,_O_RDWR,_O_BINARY|_O_CREAT|_O_TRUNC|_O_EXCL)) == -1)*/
-				if ((hexbuf.fd = open(hexfname, _O_RDWR | _O_CREAT | _O_BINARY,
-						0664)) == -1)
+				if ((hexbuf.fd = open(hexfname, _O_RDWR | _O_CREAT | _O_TRUNC | _O_BINARY,
+										0664)) == -1)
 					wipeout("\n Can't open R99 file.\n");
 				// 	if ( (hexbuf.fp=fopen(hexfname, "wb+")) == NULL)
 				//		wipeout("\n Can't open hex.\n");

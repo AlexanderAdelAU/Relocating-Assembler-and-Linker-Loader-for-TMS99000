@@ -17,9 +17,9 @@
 
 /*  Get globals:  */
 
-#include "r99gbl.h"
-#include "r99ext.h"
-#include "rel99.h"
+#include "R99gbl.h"
+#include "R99Ext.h"
+#include "REL99.h"
 
 /*
  This function is the workhorse of the assembler.  The routine
@@ -27,10 +27,10 @@
  and builds the binary output as it evaluates the operand field.
  */
 
-void asmline() {
+asmline() {
 	char c, d, label[2 * SYMLEN];
 	unsigned char opattr;
-	unsigned short opcode, noopcode;
+	unsigned opcode, noopcode;
 
 	nbytes = 0;
 	address = pc;
@@ -76,7 +76,7 @@ void asmline() {
 	case -1:
 		opcode = 255; /*  Set nil pseudo-op.	*/
 		opattr = 0x80;
-/* Label */
+		/* Label */
 	case 1:
 		if ((opattr & (PSOP | IFGROUP)) == (PSOP | IFGROUP)) {
 			if (label[0] != '\0')
@@ -94,16 +94,18 @@ void asmline() {
 						if ((opattr & PSOP) && opcode == 0x000A)
 							sympoint->symname[1] |= 0x80;
 					} else {
-						/*This duplicates detection works as ENT Declarations are made at the end of the Assembly file */
-						sympoint->symvalu = pc; /* Assume already entered via ENT  */
-						sympoint->symflg |= DUPBIT;  /*Possible Duplicate */
+						sympoint->symvalu = pc;
+						if ((sympoint->symflg & ENTBIT) == 0
+								&& symcmp(sympoint->symname, progname) != 0)
+							sympoint->symflg |= DUPBIT;
 					}
 				} else {
 					if (slookup(label)) {
-						markerr('P');  /* Phasing Error */
+						markerr('P'); /* Phasing Error */
 						label[0] = '\0';
 					} else {
-						if (sympoint->symflg & DUPBIT) markerr('D');
+						if (sympoint->symflg & DUPBIT)
+							markerr('D');
 						if (sympoint->symflg & ENTBIT) {
 							sympoint->symvalu = pc;
 							relflg = TRUE;
@@ -129,10 +131,13 @@ void asmline() {
  Internal function to process pseudo opcodes.
  */
 
-void _psop(unsigned short opcode, char *label) {
+_psop(opcode, label)
+unsigned opcode;
+char *label;
+{
 	char *bptr, d, c;
 	int cflag;
-	unsigned short t;
+	unsigned t;
 	struct symbtbl *sptr;
 	sptr = sympoint;
 	bptr = binbuf;
@@ -147,6 +152,13 @@ void _psop(unsigned short opcode, char *label) {
 			return;
 		address = pc = t;
 		hexflg = FLUSH;
+		/* v2.1: emit AORG_MARK to tell linker this is an absolute ORG */
+		if (pass == 2) {
+			item = AORG_MARK;
+			type = PREL;
+			field = t;
+			putrel();
+		}
 		if (label[0] == '\0')
 			goto chkargs;
 		backitem(t, VALUE);
@@ -253,7 +265,7 @@ void _psop(unsigned short opcode, char *label) {
 				t = eval(START);
 				/* REL Code */
 
-				if ((itemflg[0] & RELBIT) || relflg) {  /* relflg Added 14/11/2024 so WORD &+2 (point) works */
+				if ((itemflg[0] & RELBIT) || relflg) { /* relflg Added 14/11/2024 so WORD &+2 (point) works */
 					item = PREL;
 					field = t;
 					putrel();
@@ -299,18 +311,17 @@ void _psop(unsigned short opcode, char *label) {
 		}
 		return;
 
-	case 5: /* BSS	*/
-		t = eval(START);
-		if (evalerr)
-			markerr('S');
-		nbytes = t;
-		hexflg = FLUSH;
-		progsize += t;
-		item = SETLC; /* alter the location counter */
-		type = PREL;
-		field = pc+nbytes;
-		putrel();
-		goto chkargs;
+	case 5: /* BSS */
+	    t = eval(START);
+	    if (evalerr)
+	        markerr('S');
+	    nbytes = t;
+	    hexflg = FLUSH;
+	    item = SETLC;
+	    type = PREL;
+	    field = pc + nbytes;
+	    putrel();
+	    goto chkargs;
 
 	case 6: /* END.	*/
 		if (pass == 1)
@@ -377,7 +388,7 @@ void _psop(unsigned short opcode, char *label) {
 			markerr('P');
 		goto chkargs;
 
-	case 11:	/* EVEN */
+	case 11: /* EVEN */
 		if (pc & 1) { /* EVEN */
 			nbytes++;
 			item = ABS;
@@ -443,9 +454,9 @@ void _psop(unsigned short opcode, char *label) {
 		}
 		goto chkargs;
 
-	case 14: /*  ENT - place entry symbol in table for outside ref */
+	case 14: /* ENT - place entry symbol in table for outside ref */
 		hexflg = NOCODE;
-		entflg = TRUE;
+		entflg = FALSE; /* clear immediately - ENT itself is not an entry point */
 		if (label[0] != '\0')
 			markerr('L');
 		if (getchr(&c, SKIP) != ALPHA) {
@@ -453,30 +464,44 @@ void _psop(unsigned short opcode, char *label) {
 			return;
 		}
 		backchr;
-		getname(label); /* ENT name */
+		getname(label);
 		strcat(label, PADDING);
 		if (pass == 1) {
-			if (addsym(label)) {
-				sympoint->symvalu = pc;
+			switch (slookup(label)) {
+			case 0: /* found - symbol already defined by its label */
 				sympoint->symflg |= (ENTBIT | RELBIT);
-				entflg = FALSE;
-			} else { /* Already defined */
-				/*	sympoint -> symname[1] &= 0x7F; */
-				sympoint->symflg |= (ENTBIT | RELBIT);
-				entflg = FALSE;
+				break;
+			case -1: /* not found - forward ref or ENT before label */
+				if (addsym(label) == -1) {
+					sympoint->symvalu = 0; /* unknown until label seen */
+					sympoint->symflg |= (ENTBIT | RELBIT);
+				}
+				break;
+			case 1:
+				wipeout("\nSymbol table full.\n");
 			}
 		}
 		if (pass == 2) {
-			if (slookup(label)) {
+			switch (slookup(label)) {
+			case 0: /* found - get its address */
+				address = sympoint->symvalu;
+				break;
+			case -1: /* not found in pass 2 - genuine error */
+			case 1:
 				markerr('U');
 				return;
-			} else
-				address = sympoint->symvalu;
+			}
 		}
 		goto chkargs;
 
-	case 15: /*  NAM - get module name  */
+	case 16: /* INCLUDE */
+		hexflg = NOCODE;
+		if (label[0] != '\0')
+			markerr('L');
+		include_source();
+		return;
 
+	case 15: /* NAM - get module name */
 		if (label[0] != '\0')
 			markerr('L');
 		if (getchr(&c, SKIP) != ALPHA) {
@@ -484,25 +509,16 @@ void _psop(unsigned short opcode, char *label) {
 			return;
 		}
 		backchr;
-		getname(label); /* name of module */
+		getname(label);
 		strcat(label, PADDING);
 		if (pass == 1) {
-			if (addsym(label)) {
-				sympoint->symvalu = 0;
-				sympoint->symflg |= PNAME;
-			} else
-				sympoint->symname[1] |= 0x80; /* show already defined */
+			memcpy(progname, label, SYMLEN);
 		}
 		if (pass == 2) {
-			if (slookup(label)) {
-				markerr('P2');
-				label[0] = '\0';
-			} else {
-				if (sympoint->symname[1] & 0x80)
-					markerr('M');
-				else
-					address = sympoint->symvalu;
-			}
+			if (symcmp(label, progname) != 0)
+				markerr('M');
+			else
+				address = 0;
 		}
 		goto chkargs;
 
@@ -523,11 +539,12 @@ void _psop(unsigned short opcode, char *label) {
  Internal function to process normal (non-pseudo) opcodes.
  */
 
-void _normop(unsigned short opcode, char attr)
-
+_normop(opcode, attr)
+unsigned opcode;
+char attr;
 {
-	unsigned short regmask, regval, t, value, c, findex, i, j, fields[3];
-	int short disp, operand, negindex;
+	unsigned regmask, regval, t, value, c, findex, i, j, fields[3];
+	int disp, operand, negindex;
 	unsigned char shift, parse, opdcount, attr1, attr2;
 	bptr = binbuf;
 	nbytes = 2;
@@ -814,8 +831,8 @@ void _normop(unsigned short opcode, char attr)
 			nbytes += 2;
 			t = eval(START);
 			opcode |= operand;
-			binbuf[0] = (char) (opcode >> 8);
-			binbuf[1] = (char) opcode;
+			binbuf[0] =  (opcode >> 8);
+			binbuf[1] =  opcode;
 			binbuf[2] = t >> 8;
 			binbuf[3] = t;
 			item = ABS;

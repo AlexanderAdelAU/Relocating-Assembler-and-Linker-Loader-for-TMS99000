@@ -1,21 +1,108 @@
 /*
  **  General rel interface routines
  */
-#include "r99gbl.h"
-#include "rel99.h"
-#include "R99ext.h"
+#include "R99gbl.h"
+#include "REL99.h"
+#include "R99Ext.h"
 
 #define NO 0
 #define YES 1
 #define NULL 0
 #define ERR -1
 
+/* ==========================================================================
+ * Explicit external-reference accumulator (XREFS scheme - see rel99.h).
+ *
+ * Every reference to an EXT symbol records (symbol, module-relative location)
+ * here during pass 2; at END the grouped list is emitted by xref_emit() as:
+ *     EXT "XREFS" / XCHAIN <count>,<name> / CHAIN <loc> * count
+ * The reference word itself is left as ABS 0 in the object; the linker
+ * patches each recorded location with the symbol's final absolute address.
+ * ======================================================================== */
+
+struct xrefent {
+	char           name[SYMLEN];
+	unsigned loc;
+};
+
+struct xrefent xreftab[MAXXREF];
+int      nxref;
+
+/* Called at the start of each module's object output (relhead). */
+xref_reset() {
+	nxref = 0;
+}
+
+/* Record one reference site.  name is the SYMLEN space-padded symbol name;
+ * loc is the module program-counter location of the operand word. */
+xref_add(name, loc)
+char *name;
+unsigned loc;
+{
+	if (nxref >= MAXXREF) {
+		printf("\nXREF table overflow (>%d external references)\n", MAXXREF);
+		wipeout("\n");
+		return;
+	}
+	memcpy(xreftab[nxref].name, name, SYMLEN);
+	xreftab[nxref].loc = loc;
+	++nxref;
+}
+
+/* Emit one EXT "XREFS" + XCHAIN(count,name) + CHAIN(loc)* group. */
+xref_group(first)
+int first;
+{
+	int j, count;
+
+	count = 0;
+	for (j = first; j < nxref; ++j)
+		if (!(xreftab[j].name[0] & 0x80) &&
+		    !symcmp(xreftab[j].name, xreftab[first].name))
+			++count;
+
+	item = EXT;                        /* EXT "XREFS" marker */
+	memcpy(symbol, REL99_EXT_XREFS, SYMLEN);
+	putrel();
+
+	item  = XCHAIN;                    /* header: field = count, symbol = name */
+	type  = ABS;
+	field = count;
+	memcpy(symbol, xreftab[first].name, SYMLEN);
+	putrel();
+
+	for (j = first; j < nxref; ++j) {  /* one CHAIN item per location */
+		if ((xreftab[j].name[0] & 0x80) ||
+		    symcmp(xreftab[j].name, xreftab[first].name))
+			continue;
+		xreftab[j].name[0] |= 0x80;
+		item  = CHAIN;
+		type  = PREL;
+		field = xreftab[j].loc;
+		putrel();
+	}
+}
+
+/* Emit every accumulated group.  Called from relsyms() at END, pass 2. */
+xref_emit() {
+	int i;
+
+	if (pass < 2)
+		return;
+	for (i = 0; i < nxref; ++i)
+		xreftab[i].name[0] &= 0x7f;
+	for (i = 0; i < nxref; ++i)
+		if (!(xreftab[i].name[0] & 0x80))
+			xref_group(i);
+}
+
 /*
  Function to form the hex output line and put it to
  the hex output device.
  */
 
-short int relout() {
+relout()
+{
 	char count, count2, *bptr, code, tflg, *sptr;
 	if (pass < 2)
 		return (YES);
@@ -40,10 +127,10 @@ short int relout() {
 			 }
 			 */
 			if (tflg & EXTBIT) {
-				puthex2(*bptr++, &hxlnptr); /* put out lsb of word */
+				hxlnptr = puthex2(*bptr++, hxlnptr); /* put out lsb of word */
 				count++;
 				for (count2 = 0; count2 < SYMLEN; count2++)
-					puthex2(*sptr++, &hxlnptr);
+					hxlnptr = puthex2(*sptr++, hxlnptr);
 				*hxlnptr++ = 'X'; /* show the symbol is external */
 			}
 		}
@@ -65,7 +152,8 @@ short int relout() {
  Output the module header consisting of Common size and 
  Programme Indicator.
  */
-void relhead() {
+relhead() {
+	xref_reset();       /* start a fresh reference list for this module */
 	outrem = 8; /* initialise */
 	outchunk = 0;
 	item = PNAME; /* programme name */
@@ -94,8 +182,8 @@ void relhead() {
 /*
  Output the entry symbols - assume symbols not sorted
  */
-void entnam() {
-	short int n, t;
+entnam() {
+	int n, t;
 	/*	n = nssymbols;  /*sortsym(NOSORT);	/*Get number of sorted symbols */
 	n = SYMBOLS;
 	sympoint = symtbl; /* begin at start of table */
@@ -113,33 +201,26 @@ void entnam() {
  This function will output all the referenced externals
  and entry points into the object file
  */
-void relsyms() {
-	short int n;
+relsyms() {
+	int n;
 
 	n = nssymbols;
-	sympoint = symtbl; /* point to the start of the table */
+	sympoint = symtbl;
 	while (n > 0) {
-		if (sympoint->symflg & (EXTBIT | ENTBIT)) {
-			if (sympoint->symflg & EXTBIT) /* type of symbol to be defined */
-				item = XCHAIN;
-			else
-				item = EPOINT;
-
-			field = sympoint->symvalu; /* offset of last symbol */
+		/* Entry points only: externals are emitted by xref_emit() as
+		 * explicit grouped reference lists (XREFS scheme). */
+		if (sympoint->symflg & ENTBIT) {
+			item  = EPOINT;
+			type  = PREL;
+			field = sympoint->symvalu;
 			memcpy(symbol, sympoint->symname, SYMLEN);
-			if (!(sympoint->symvalu) && (sympoint->symflg & EXTBIT)) {
-				type = ABS;
-				putabs2();
-			} else {
-				type = PREL;
-				putrel();
-			}
+			putrel();
 		}
 		sympoint++;
 		--n;
 	}
+	xref_emit();        /* emit grouped EXT "XREFS" reference lists */
 }
-
 /*--------------------------------------------------------
  new rel section
  ---------------------------------------------------------*/
@@ -161,8 +242,8 @@ void relsyms() {
  This saves calling putrel() twice as would be the case
  using the normal putrel() ABS sequence.
  */
-void putabs2() {
-	unsigned short f;
+putabs2() {
+	unsigned f;
 	f = field;
 	field = f >> 8;
 	putrel();
@@ -181,12 +262,13 @@ void putabs2() {
 /* putrel();
  } */
 
-void putabs() {
+putabs() {
 	/* *bptr++ = field; */
 	putrel();
 }
 
-short int putrel() {
+putrel()
+{
 	char c[3], f, *p;
 	if (pass < 2)
 		return (YES);
@@ -264,42 +346,50 @@ short int putrel() {
 	return (NO);
 }
 
-short int puttyp() {
+puttyp()
+{
 	if (putbits(type, 2))
 		return (YES); /* put 2-bit field type */
 	return (NO);
 }
 
-short int putfld() { /* put low then high byte */
+putfld()
+{ /* put low then high byte */
 	if (putbits(field, 8) && putbits(field >> 8, 8))
 		return (YES);
 	return (NO);
 }
 
-short int putsym() { /* put symbol */
-	short int i, j;
+putsym()
+{
+	int i;
 	char *cp;
+
 	cp = symbol;
-	if ((i = strlen(symbol)) > MAXSYM)
-		i = MAXSYM; /* enforce max length */
-	/* don't pad with spaces */
-	/* for(j=0;(j < i) && (*cp++ != 0x20); ++j); */
+	i = 0;
+
+	while (i < MAXSYM && cp[i] != '\0' && cp[i] != ' ')
+		++i;
+
 	if (!putbits(i, BITPSYM))
-		return (NO); /* put n bits for symbol length. 3 for spec, 4 for R99 */
-	cp = symbol;
+		return NO;
+
 	while (i--) {
 		if (!putbits(*cp++, 8))
-			return (NO); /* put next byte */
+			return NO;
 	}
-	/* *cp = '\0'; /* terminate symbol What was this for ??? AC */
-	return (YES);
+
+	return YES;
 }
 
 /*
  ** put next n bits from fld into REL file
  ** return true on success, false on error
  */
-short int putbits(unsigned char fld, unsigned char nbits) {
+putbits(fld, nbits)
+unsigned char fld;
+unsigned char nbits;
+{
 	unsigned char put, n;
 	n = nbits;
 	while (n) { /* more bits to put */
@@ -325,6 +415,8 @@ short int putbits(unsigned char fld, unsigned char nbits) {
 /*
  Simple hex function which could go into STDLIB2
  */
-char ishex(char c) {
+ishex(c)
+char c;
+{
 	return isdigit(c) || (c >= 'A' && c <= 'F');
 }
