@@ -1,9 +1,9 @@
 /*
  ============================================================================
- Name        : link99.c
+ Name        : link99.c K&R version
  Authors     : J. E. Hendrix (original Small-MAC linker, 1985)
                Alex Cameron (TMS9900 port 1984; Eclipse cross-compiler 2015)
- Version     : 3.9.27
+ Version     : 3.9.56
  Copyright   : Free to use
  Description : Relocatable linker/loader for the TMS9900 architecture.
                Based on the Small-MAC linkage editor (ver 1.0).
@@ -79,10 +79,185 @@
                        Corresponding changes: rel99.h (AORG_MARK alias),
                        R99ASMLN.c (emit at AORG), GETREL.c (decode),
                        SEEREL.c (display as "aorg base:").
+ 3.9.28 A. Cameron     Fix pmstart[]/pmend[] silently page-aligned for any
+                       AORG >= PAGE_SEG, discarding the in-page offset (e.g.
+                       AORG 0x3A22 was written into the EXE chain block's
+                       load address as 0x3000). The rounded value is correct
+                       for its original purpose - stripping the page-relative
+                       offset out of PREL/SETLC records - but was wrongly
+                       being reused as the actual load address too. Added
+                       page_align() (the rounding formula now has exactly one
+                       definition instead of four separately hand-typed
+                       copies) and pm_aorg_true (the real, unrounded address,
+                       populated only from AORG_MARK - NOT from PREL, which
+                       fires unfiltered for every internal reference in a
+                       module and is not a reliable "true start" signal for
+                       anything but the smallest single-AORG modules).
+                       pmstart[]/pmend[] now use pm_aorg_true throughout.
+                       Invisible for -P0/-P2/-P3 (their AORGs already happen
+                       to be page-aligned, so rounding was always a no-op);
+                       first surfaced on -P5 with AORG 0x3A22, the first
+                       build to ever use a page where AORG isn't the page's
+                       exact base.
+ 3.9.29 A. Cameron     Fix is_overlay_chain_base_sentinel excluding page0/
+                       common modules from the zero-terminator-as-cmod
+                       guard (pmpage[i]==0 and pmstart[i]<PAGE_SEG were both
+                       `continue`d past, on the wrong assumption that only
+                       AORG overlay modules hit this). A page0 module with
+                       several external references hits the identical bug:
+                       every symbol's chain spuriously terminates one link
+                       too late, at addr==pmcmod (the module's own offset
+                       0), so whichever symbol resolves last in the sorted
+                       xr/ep walk overwrites that location with its own
+                       value - corrupting the module's first instruction
+                       word. Removed both exclusions; the underlying
+                       addr==pmcmod check was already correct and generic,
+                       it just never ran for common modules.
 
+ 3.9.35 A. Cameron     Implements REL99_FORMAT.TXT clauses 2.3, 4.2, 6.5.
+                       (2.3) The AORG base now binds to the buffer position
+                       of the AORG_MARK item (pm_aorg_cloc), not the module
+                       start: smallcp emits a 4-byte relocatable preamble
+                       (>1000 >1000) before its AORG, which previously
+                       shifted every paged image +4 and made every
+                       runtime->buffer conversion 4 bytes early (the slot-4
+                       chain corruption seen on hardware). Pre-AORG bytes
+                       stay in the relocatable stream per the format.
+                       (4.2) XCHAIN heads convert to unique buffer offsets
+                       at record time; resolve() converts later links via
+                       the chain-owning module's span (xbuf_for_chain), so
+                       several AORG modules may share one window.
+                       (6.5) resolve() never direct-patches inside a paged
+                       module: a slot that is not a verified CT entry
+                       reports a malformed chain and abandons it. Stored
+                       resolution values are UNCHANGED from 3.9.31.
+ 3.9.36 A. Cameron     Spec clause 2.4 (emit contract): resolved external
+                       values patched into a paged module's CT are now
+                       stored as FINAL ABSOLUTE addresses (tbase). Emit
+                       adds reloc_base to any CT value < PAGE_SEG in a
+                       paged module - correct for page-local words,
+                       wrong for resolved externals (buffer offsets
+                       needing +cbase). Proven on hardware with correct
+                       slot addressing (v3.9.35): error epval >0C90
+                       emitted as >357E (+>28EE reloc delta) instead of
+                       >1C90. Same remedy as withdrawn 3.9.34, now valid
+                       because 2.3/4.2 fixed the addressing beneath it.
+ 3.9.37 A. Cameron     3.9.36 was a no-op: it stored tbase, whose v3.9.30
+                       discriminator (epval >= csize) always fires in
+                       pagemode because csize = cloc is assigned only
+                       AFTER loading while resolve() runs per module
+                       DURING loading (csize==0). Hence every resolve
+                       trace ever printed shows raw offsets ('to C90').
+                       The paged-chain store now discriminates with
+                       cloc: the target module is loaded before its
+                       entry resolves, so buffer offsets are < cloc and
+                       AORG absolutes are not; buffer offsets store
+                       epval+cbase (final absolute, spec 2.4), AORG
+                       absolutes store epval unchanged.
+ 3.9.38 A. Cameron     Spec clause 2.5: a paged AORG module crossing its
+                       4KB virtual segment is now a fatal link error.
+ 3.9.39 A. Cameron     Added resident/paged-window overlap protection.
+ 3.9.40 A. Cameron     Corrected that protection to compare actual page-map
+                       runtime spans rather than packed linker-buffer size.
+                       Increased MAXPMODS to 128 for large chain-block output.
+                       Chain ordering and chain-block writer remain exactly
+                       as in the proven 3.9.37 baseline.
+ 3.9.51 A. Cameron     XREFS scheme: external references are now explicit
+                       (EXT "XREFS" / XCHAIN count,name / CHAIN location*).
+                       load() records each location as a code-buffer offset
+                       on the xr entry; resolve() direct-patches the ABS
+                       placeholder with the final absolute address.  Removed
+                       the in-code chain walk and all its heuristics
+                       (xbuf_for_chain, paged_chain_span, overlay sentinel,
+                       circular guard, malformed-chain abandon).
+ 3.9.52 A. Cameron     Preserve ordinary-PREL versus AORG-PREL provenance in
+                       CT$. Ordinary PREL values are link-buffer addresses and
+                       Phase 2 applies pmstart-pmcmod; AORG PREL values are
+                       already final virtual addresses. Fixes resident-module
+                       operands above >1000 (for example IOCORE >1856) being
+                       emitted one cbase low instead of >2856.
+ 3.9.53 A. Cameron     resolve(): the epval>=cloc AORG discriminator broke
+                       once total code size passed >8000 (Step 6, csize
+                       >B2A6): a buffer offset and an AORG virtual are then
+                       numerically indistinguishable, and the SAME symbol
+                       resolved differently depending on cloc at resolution
+                       time (down1 -> AC80 for CC_EXPR_C refs, BC80 for
+                       CC_EXPR_D refs). Provenance, not value range: newsym
+                       now sets FLGAORG on the ep entry in the exact branch
+                       where it declines to add cmod; resolve() tests the
+                       flag. Mirrors how CT_AORG_PREL fixed the identical
+                       ambiguity in CT$ (v3.9.52). Also converted the three
+                       field>=PAGE_SEG guards in emit_raw_block/
+                       emit_page_block/data emit to CT_AORG_PREL provenance
+                       (that heuristic corrupts resident PREL words above
+                       >1000 -- see the load()-side warning comment). Banner
+                       bumped so a stale exe is detectable from build logs.
  ============================================================================
  LINKER OPERATION - THREE PHASES
  ============================================================================
+ 3.9.55 A. Cameron     -P page numbers are now parsed in full. The
+                       explicit-page switch read ONE digit, so -P10
+                       silently meant page 1: the module's bytes were
+                       written to the wrong physical page while DREL's
+                       OVL_TABLE recorded the right one, and the mapper
+                       later mapped a page that had never been written.
+                       Invisible for eight milestones because no build
+                       had used a page above 9. An out-of-range or
+                       unparsable -P is now FATAL, not truncated.
+
+ 3.9.56 A. Cameron     Fix flat/resident SETLC corruption.  The SETLC
+                       handler treated every PREL location above >1000 as
+                       an absolute AORG and stripped its 4KB page base, even
+                       when no -P page assignment was active.  Large resident
+                       modules therefore packed BSS gaps out of the image while
+                       retaining logical EPOINT addresses (CC1 main linked as
+                       >3106 but its bytes were emitted at >1C56).  AORG SETLC
+                       normalization is now restricted to explicitly paged
+                       modules (pagemode && curpage != 0), matching the v3.9.54
+                       EPOINT/PREL provenance rule.
+
+                       Also (same version): MAXPMODS 128 -> 192 and page-map
+                       overflow is now FATAL, not a warning.  The first cut of
+                       the phase-1 fatal had a dangling-else bug (the original
+                       one-statement else was expanded to three without adding
+                       braces), so exit(1) ran for every module and the link
+                       died at module 1 regardless of MAXPMODS.  Braced.  The block
+                       splitter printed one warning and RETURNED, silently
+                       abandoning every remaining chunk -- the EXE linked
+                       clean with pieces of the program missing.  Surfaced by
+                       the M33a preprocessor image (~141 chunks: 28K resident
+                       + nine overlay pages) crossing 128, with crashes that
+                       moved as the fixture size changed.  This is the SETLC
+                       corruption's sibling: both packed or dropped bytes and
+                       left the image structurally short with no error.
+
+ 3.9.54 A. Cameron     HARDENING (the CC_DATA incident). (1) The
+                       backward-compatible AORG heuristic (EPOINT with
+                       PREL value >= PAGE_SEG) misclassified plain
+                       RESIDENT modules as AORG the moment their size
+                       crossed 0x1000 bytes: entry-point OFFSETS past
+                       4KB read as absolute addresses, base became
+                       page_align(offset)=0x1000, and the PREL emit
+                       fallback then stopped relocating resident words
+                       with buffer targets >= 0x1000 - silently zero/
+                       garbage-corrupting initialized data (CC_DATA at
+                       4338 bytes: op[]/op2[]/usexpr/declared loaded
+                       as zeros). The earlier CC_RESIDENT "spec 2.5
+                       FATAL" at 5010 bytes was the SAME misfire
+                       failing loudly by luck. Both the EPOINT
+                       heuristic and the PREL emit fallback are now
+                       gated on curpage != 0: only a module under an
+                       explicit -P assignment may be heuristically
+                       AORG-classified. AORG_MARK detection (r99 v2.1+)
+                       is unaffected. Resident PREL modules have NO 4KB
+                       size limit - common memory is contiguous.
+                       (2) Overflow-to-disk engagement now announces
+                       itself loudly with buffer usage numbers (this
+                       path is suspect in the 56K-era silent hang).
+                       (3) Memory usage report after loading: code,
+                       symbol, and free bytes, so buffer exhaustion is
+                       a number watched approaching, not a hang.
+
 
  Phase 1 - Loading (phase1())
  ----------------------------
@@ -92,7 +267,9 @@
      - Loaded into the code buffer (or overflow file .O$ if buffer full)
      - PREL/DREL relocatable words recorded in disk-based relocation tables
        (.CT$ for code, .DT$ for data) using a 5-byte entry-index scheme
-     - External references (XCHAIN) added to the xr symbol table as chains
+     - External references (XREFS groups) recorded on the xr symbol table:
+       one entry per symbol, carrying an explicit list of reference
+       locations (no in-code chain)
      - Entry points (EPOINT) added to the ep symbol table
      - link() called after each module to resolve any newly satisfiable
        external references
@@ -134,12 +311,15 @@
  resolve() - External Reference Resolution
  ------------------------------------------
  Called from link() after each module load. For each matched xr/ep pair:
-   - Walks the XCHAIN linked list stored in the code image
+   - Walks the xr entry's list of explicit reference locations (recorded
+     from the module's XREFS group at load time and already converted to
+     code-buffer offsets while the owning module was unambiguous)
    - Patches each location with the final absolute address of the ep symbol
-   - Handles PREL (code-relative) and DREL (data-relative, falls through
-     to PREL chain walk since Small-C DREL XCHAINs live in code segment)
-   - Circular chain guard: detects self-referential chains (prev_xrloc)
-     to prevent infinite loops from corrupted relocation data
+   - Handles PREL (code-relative) and DREL (data-relative) targets; the
+     reference word is an ABS placeholder, so the resolved value is written
+     directly and copied through unchanged by COM/page emit
+   - No in-code chain, no terminator, no page-map inference, no circular
+     guard: the location list is finite and each entry is self-describing
 
  ============================================================================
  Usage: link99 [-B] [-S] [-G#] [-D#] [-M] program [module/library ...]
@@ -259,15 +439,18 @@
    Large modules are automatically split into multiple chain blocks, each
    aligned to a sector boundary for Shell V5.8 loader compatibility.
 
- Symbol names are encoded 4 bits per character (BITPSYM=4), giving a
- maximum symbol length of 10 characters (MAXSYM=10) packed into 40 bits.
+ Symbol names are encoded as a BITPSYM-bit length count (BITPSYM=4, so
+ 0-15 characters) followed by that many 8-bit characters. The maximum
+ symbol length is MAXSYM=15 characters.
 
- Relocation chains:
-   PREL and DREL items carry the HEAD of a singly-linked list of every
-   location in the module that references a given external symbol. Each
-   location in the code image holds the offset of the next location in
-   the chain; zero terminates the chain. resolve() walks this chain at
-   link time, patching each location with the final absolute address.
+ External references (XREFS scheme):
+   Each external symbol used by a module is emitted at end-of-module as an
+   explicit group: EXT "XREFS", then XCHAIN <count>,<name>, then <count>
+   CHAIN <location> items.  There is no in-code linked list and no zero
+   terminator.  load() records each location (converted to a code-buffer
+   offset via the module's own AORG anchor) on the symbol's xr entry;
+   resolve() later writes the symbol's final absolute address into each.
+   The reference word itself is an ABS 0 placeholder with no CT entry.
 
  Memory layout during linking:
    buffer[]  code image grows upward  from buffer[0]      -> bpnext
@@ -315,14 +498,14 @@
 
 #define MAXFILES    20
 #define CRELSIZE    5               /* bytes per relocation table entry     */
-#define MAXMEM		48128;			/* start copying to disc 				*/
+#define MAXMEM		64000;			/* start copying to disc 				*/
 
 #define NOCCARGC                    /* do not pass arg counts to functions  */
 
 #define NAMESIZE    15
-#define MAXFIL      20
+#define MAXFIL      30
 #define STACK       512             /* stack headroom reservation           */
-#define AUXBUF      8096            /* aux buffer for reference file        */
+#define AUXBUF      18192            /* aux buffer for reference file        */
 /* RELMEM removed: relocation tables now held in disk files .CT$ and .DT$   */
 #define MAXOPEN     6               /* maximum simultaneously open files    */
 #define OHDOPEN     1024            /* memory overhead per open file        */
@@ -350,9 +533,33 @@
 /* -------------------------------------------------------------------------
  * Memory manager / page map
  * ---------------------------------------------------------------------- */
-#define MAXPMODS    32              /* max modules tracked in page map      */
+/*
+** v3.9.56: 128 was not enough and overflowing it CORRUPTED THE OUTPUT
+** SILENTLY -- split_page_blocks() printed a warning and RETURNED,
+** abandoning every remaining chunk unwritten, so the EXE linked clean
+** with pieces of the program missing and the board executed whatever
+** the loader left.
+**
+** 192 covers the real need with margin: the M33a image is ~141 chunks
+** (28KB resident + nine overlay pages). Raise if a future image needs
+** more; the arrays cost 10 bytes/slot in global static plus 8/slot in
+** write_exe's stack frame.
+*/
+#define MAXPMODS    192             /* max modules/chunks tracked in page map */
 #define PMTERM      0xFFFF          /* page-map table terminator word       */
 #define EXE_MAX_BLOCK 0x01F8          /* one sector minus header; aligns blocks to sector boundaries */
+
+/*
+ * Internal CT$ type, never present in an R99 input stream.
+ *
+ * PREL values from an AORG body are already final virtual addresses.
+ * Ordinary PREL values are converted by load() to link-buffer addresses
+ * and still require the page-map entry's runtime-minus-buffer delta when
+ * emitted. Keeping these cases distinct prevents a resident value such
+ * as >1856 from being mistaken for an AORG address merely because it is
+ * numerically above PAGE_SEG.
+ */
+#define CT_AORG_PREL 0x41
 
 /* v3.7: trampolines removed - GAL transparent mapping makes cross-page
  * calls plain BL/RT. -T#/-K#/-W# switches removed. Segment collision
@@ -373,7 +580,7 @@
  * Symbol table layout
  * Each entry: [NXT ptr | VAL | SYM string | FLG byte]
  * ---------------------------------------------------------------------- */
-#if int16
+#ifdef int16
 #define NXT     0                       /* next-entry pointer (2 bytes)     */
 #define VAL     2                       /* value field (2 bytes)            */
 #define SYM     4                       /* symbol name (MAXSYM+1 bytes)     */
@@ -382,10 +589,13 @@
 #define HIGH    0x7f                    /* sentinel: end of ASCII table     */
 #define CUSHION (200 * SSZ)             /* headroom before overflow         */
 #define FLGEXT  0x80                    /* flag: symbol is external         */
+#define FLGAORG 0x40                    /* flag: paged AORG entry point --  */
+                                        /* VAL is a final virtual address,  */
+                                        /* never add cbase (see newsym)     */
 char high[] = { HIGH, 0 };
 #endif
 
-#if int32
+#ifdef int32
 #define NXT     0                       /* next-entry pointer (4 bytes)     */
 #define VAL     4                       /* value field (4 bytes)            */
 #define SYM     8                       /* symbol name (MAXSYM+1 bytes)     */
@@ -394,6 +604,9 @@ char high[] = { HIGH, 0 };
 #define HIGH    0x7f                    /* sentinel: end of ASCII table     */
 #define CUSHION (400 * SSZ)             /* headroom before overflow         */
 #define FLGEXT  0x80                    /* flag: symbol is external         */
+#define FLGAORG 0x40                    /* flag: paged AORG entry point --  */
+                                        /* VAL is a final virtual address,  */
+                                        /* never add cbase (see newsym)     */
 char high[] = { HIGH, 0 };
 #endif
 
@@ -409,7 +622,7 @@ unsigned outchunk;    /* current 16-bit chunk for REL file            */
 unsigned item;        /* current item code                            */
 unsigned type;        /* type field of current item                   */
 unsigned field;       /* current bit-field value                      */
-char           symbol[10];  /* current symbol name                          */
+char           symbol[MAXSYM + 1]; /* current symbol name (sized off MAXSYM) */
 
 /* -------------------------------------------------------------------------
  * Global file-name buffers
@@ -433,8 +646,8 @@ char outfn[NAMESIZE];       /* output filename (.COM or .LGO)               */
  * On a 32-bit host 'unsigned int' is used so the index arithmetic never
  * overflows even at the high end.
  */
-unsigned int crelptr;       /* current entry index in code relocation table */
-unsigned int drelptr;       /* current entry index in data relocation table */
+unsigned crelptr;       /* current entry index in code relocation table */
+unsigned drelptr;       /* current entry index in data relocation table */
 
 /* -------------------------------------------------------------------------
  * Library multi-pass support
@@ -532,9 +745,28 @@ unsigned pm_modidx;           /* npmods index of current paged module  */
 unsigned pm_modsize;          /* size of current paged module          */
 unsigned pm_aorg_base;        /* explicit AORG base captured from AORG_MARK */
 int      pm_aorg_valid;       /* non-zero if current module used AORG   */
+unsigned pm_aorg_cloc;        /* v3.9.35 (2.3): buffer offset (cloc) at the
+                               * accepted AORG_MARK - where absolute code
+                               * actually begins. Pre-mark bytes are
+                               * relocatable preamble, NOT page content.  */
+unsigned pm_aorg_true;        /* TRUE (unrounded) AORG address - the real
+                                * load address. pm_aorg_base is page_align()'d
+                                * and must stay that way for PREL/SETLC offset
+                                * stripping - never use it as a load address. */
+int      pm_saw_abs_prel;     /* v3.9.30: YES if this module has a genuinely
+                                * absolute (AORG) PREL - field was >= PAGE_SEG
+                                * BEFORE cmod was added. Relocatable modules
+                                * never do; gates the AORG-fixup heuristic so a
+                                * relocatable module loaded high in the buffer
+                                * (e.g. call.r99) is not mis-based.            */
 int            pmpage[MAXPMODS];    /* page number for this module (0-15)   */
+int            pmpgend[MAXPMODS];   /* v3.9.57: last page this module spans  */
+int            pmspan[MAXPMODS];    /* v3.9.57: 1 = module DECLARED a span   */
 int            npmods;              /* number of page-map entries recorded  */
 int            curpage;             /* current page assignment (-P switch)  */
+int            curpgend;            /* v3.9.57: last page of a -Plo-hi span  */
+                                    /*   -P10    -> curpage=10 curpgend=10   */
+                                    /*   -P10-12 -> curpage=10 curpgend=12   */
 int            pagemode;            /* non-zero: at least one -P flag used  */
 int            page1data;           /* non-zero: page1 module has data segment */
 int            pages_auto;          /* non-zero: -PAGES auto-assign mode    */
@@ -548,28 +780,28 @@ int            pages_next;          /* next page to auto-assign             */
  * External declarations (defined in rel99 support modules)
  * ---------------------------------------------------------------------- */
 extern int  okay();
-extern void putls();
+extern putls();
 extern int  avail();
 extern char *malloc();
-extern void poll();
+extern poll();
 extern int  getarg();
 extern int  extend();
-extern void error();
-extern void error2();
+extern error();
+extern error2();
 extern int  getrel();
-extern void ifilelbuf();
-extern void delete();
-extern void itox();
-extern void itou();
+extern ifilelbuf();
+extern delete();
+extern itox();
+extern itou();
 extern int  xtoi();
 extern int  utoi();
-extern void puts2();
-extern void puts3();
+extern puts2();
+extern puts3();
 extern int  ferror2();
 extern int  getint();
-extern void putint();
+extern putint();
 extern int  get16int();
-extern void put16int();
+extern put16int();
 
 /* v3.9.12: SHELL v57 linked-list EXE block writer for paged output. */
 unsigned emit_page_block_data();
@@ -638,6 +870,31 @@ patch_pagemap()
 		write(dsfd, &pmval, 2);
 		lseek(dsfd, dspg, SEEK_SET);
 	}
+}
+
+/* ==========================================================================
+ * page_align  -  Round a virtual address down to its 4KB page boundary.
+ *
+ *  This is a pure calculation with no side effects - it exists only to
+ *  give the rounding formula ONE definition instead of four separately
+ *  hand-typed copies (which had drifted into inconsistent use: two
+ *  sites correctly kept the TRUE address around for use as a load
+ *  address, two others didn't).
+ *
+ *  IMPORTANT: the return value of this function must NEVER be used as
+ *  a load address (pmstart[]/pmend[]). It exists ONLY for stripping
+ *  the page-relative offset out of PREL/SETLC records, where the
+ *  in-page offset needs to be measured from the page's own start.
+ *  Using it as a load address silently discards everything below the
+ *  page boundary - e.g. an AORG of 0x3A22 becomes 0x3000, which is
+ *  wrong for any module whose AORG isn't already page-aligned.
+ * ========================================================================== */
+unsigned page_align(addr)
+	unsigned addr;
+{
+	if (addr >= PAGE_SEG)
+		return (addr & ~((PAGE_SEG - 1)));
+	return addr;
 }
 
 /* ==========================================================================
@@ -752,7 +1009,7 @@ emit_pagemap()
 			if (pmend[i] == pmstart[i]) continue;
 			abs_s  = pmstart[i];
 			abs_e  = pmend[i];
-			abs_pg = (unsigned)pmpage[i];
+			abs_pg = pmpage[i];
 			write99(outfd, &abs_s,  2);
 			write99(outfd, &abs_e,  2);
 			write99(outfd, &abs_pg, 2);
@@ -823,7 +1080,27 @@ emit_raw_block(cloc_p, ref_p)
 		ctseek(tp);
 		read(ctfd, rtbuf, CRELSIZE);
 		field = get16int(rtbuf + 2);
-		if (rtbuf[4] == PREL) field += xrplus + cbase;
+		/* v3.9.53 (revised): the first attempt guarded on
+		 * field >= PAGE_SEG here, repeating at emit time exactly the
+		 * heuristic the load()-side comment forbids: an ORDINARY
+		 * resident PREL word whose target sits past buffer offset
+		 * >1000 (IOCORE fmptr >1856; in Step 6 most of the resident
+		 * image) is numerically >= PAGE_SEG too, and would have been
+		 * emitted one cbase LOW.  Provenance already exists: load()
+		 * tags AORG-body PREL words CT_AORG_PREL (v3.9.52), so use
+		 * it, matching the phase-2 chain emitter's contract:
+		 *
+		 *   PREL          CT value is a link-buffer address: + cbase
+		 *   CT_AORG_PREL  CT value is final virtual: preserve
+		 *
+		 * (The 2026-07 double-relocation of level13/zerojump/store/
+		 * level1/primary was in resolve(), not here -- see newsym()
+		 * FLGAORG.)  xrplus always applies: it is an offset WITHIN
+		 * the target, not a relocation.                            */
+		if (rtbuf[4] == PREL)
+			field += xrplus + cbase;
+		if (rtbuf[4] == CT_AORG_PREL)
+			field += xrplus;
 		if (rtbuf[4] == DREL) field += xrplus + dbase;
 		xrplus = 0;
 		write99(outfd, &field, 2);
@@ -870,7 +1147,7 @@ unsigned emit_page_block(pg, cloc_p, ref_p)
 	unsigned *ref_p;
 {
 	unsigned  sz, szsave, tp;
-	long            szpos;
+	int             szpos;
 	char            rtbuf[CRELSIZE];
 	char            str[6];
 
@@ -927,7 +1204,27 @@ unsigned emit_page_block(pg, cloc_p, ref_p)
 		read(ctfd, rtbuf, CRELSIZE);
 		field = get16int(rtbuf + 2);
 
-		if (rtbuf[4] == PREL) field += xrplus + cbase;
+		/* v3.9.53 (revised): the first attempt guarded on
+		 * field >= PAGE_SEG here, repeating at emit time exactly the
+		 * heuristic the load()-side comment forbids: an ORDINARY
+		 * resident PREL word whose target sits past buffer offset
+		 * >1000 (IOCORE fmptr >1856; in Step 6 most of the resident
+		 * image) is numerically >= PAGE_SEG too, and would have been
+		 * emitted one cbase LOW.  Provenance already exists: load()
+		 * tags AORG-body PREL words CT_AORG_PREL (v3.9.52), so use
+		 * it, matching the phase-2 chain emitter's contract:
+		 *
+		 *   PREL          CT value is a link-buffer address: + cbase
+		 *   CT_AORG_PREL  CT value is final virtual: preserve
+		 *
+		 * (The 2026-07 double-relocation of level13/zerojump/store/
+		 * level1/primary was in resolve(), not here -- see newsym()
+		 * FLGAORG.)  xrplus always applies: it is an offset WITHIN
+		 * the target, not a relocation.                            */
+		if (rtbuf[4] == PREL)
+			field += xrplus + cbase;
+		if (rtbuf[4] == CT_AORG_PREL)
+			field += xrplus;
 		if (rtbuf[4] == DREL) field += xrplus + dbase;
 		xrplus = 0;
 
@@ -954,23 +1251,167 @@ unsigned emit_page_block(pg, cloc_p, ref_p)
 }
 
 /* ==========================================================================
+ * Multi-line command line support
+ *
+ *  A trailing '^' on the last command-line argument tells link99 that the
+ *  command continues on the next input line, e.g.
+ *
+ *      link99 -O1000 -M skeltest.EXE ^
+ *          skeltest.R99 ^
+ *          ovlmgr.R99 ^
+ *          ...
+ *          -P5 cc_codegen.R99
+ *
+ *  A trailing comma (,) works the same way as '^', e.g.
+ *
+ *      link99 -O1000 -M skeltest.EXE ,
+ *          skeltest.R99 ,
+ *          -P5 cc_codegen.R99
+ *
+ *  Continuation lines are read from standard input; each line that itself
+ *  ends with '^' or ',' continues onto the following line.  The tokens collected
+ *  are appended to argv before getsw()/phase1() ever see the arguments,
+ *  so the rest of the linker is completely unaware of the mechanism.
+ * ======================================================================== */
+#define MAXXARG  128                /* max total arguments after expansion  */
+#define XARGBUF  4096               /* text pool for continuation tokens    */
+#define ISCONT(c) ((c) == '^' || (c) == ',')   /* continuation characters   */
+
+char *xargv[MAXXARG];               /* expanded argument vector             */
+char  xargbuf[XARGBUF];             /* backing store for new tokens         */
+
+/* --------------------------------------------------------------------------
+ * getcmdline  -  Read one line from standard input (fd 0).
+ *                Strips CR/LF.  Returns the line length, or EOF on
+ *                end of input.
+ * ------------------------------------------------------------------------ */
+int getcmdline(buf, max)
+	char *buf; int max;
+{
+	int  n, got;
+	char c;
+
+	n = 0;
+	got = NO;
+	while (read(0, &c, 1) == 1) {
+		got = YES;
+		if (c == '\n')
+			break;
+		if (c != '\r' && n < max - 1)
+			buf[n++] = c;
+	}
+	buf[n] = 0;
+	return (got ? n : EOF);
+}
+
+/* --------------------------------------------------------------------------
+ * expand_args  -  Build the expanded argument vector in xargv[].
+ *                 Returns the new argument count.
+ * ------------------------------------------------------------------------ */
+int expand_args(argc, argv)
+	int argc; char **argv;
+{
+	char  line[256];
+	char *p;
+	int   n, i, len, cont;
+
+	n = 0;
+	for (i = 0; i < argc && n < MAXXARG; i++)
+		xargv[n++] = argv[i];
+
+	/* Does the last original argument request continuation?              */
+	cont = NO;
+	if (n > 0) {
+		p   = xargv[n - 1];
+		len = 0;
+		while (p[len])
+			len++;
+		if (len && ISCONT(p[len - 1])) {
+			p[len - 1] = 0;
+			if (!p[0])
+				n--;            /* bare "^" or "," argument - drop it   */
+			cont = YES;
+		}
+	}
+
+	p = xargbuf;
+	while (cont) {
+		cont = NO;
+		putls("link99* ");      /* continuation prompt                  */
+		len = getcmdline(line, 256);
+		if (len == EOF)
+			break;
+
+		/* trim trailing blanks */
+		while (len && (line[len-1] == ' ' || line[len-1] == '\t'))
+			line[--len] = 0;
+
+		/* line ends with '^' or ',' - continue onto the next line       */
+		if (len && ISCONT(line[len-1])) {
+			line[--len] = 0;
+			cont = YES;
+			while (len && (line[len-1] == ' ' || line[len-1] == '\t'))
+				line[--len] = 0;
+		}
+
+		/* tokenize on blanks and append to xargv[]                       */
+		i = 0;
+		while (i < len) {
+			while (line[i] == ' ' || line[i] == '\t')
+				i++;
+			if (!line[i])
+				break;
+			if (n >= MAXXARG)
+				error("\n- Too many arguments");
+			xargv[n++] = p;
+			while (line[i] && line[i] != ' ' && line[i] != '\t') {
+				if (p >= xargbuf + XARGBUF - 1)
+					error("\n- Command line too long");
+				*p++ = line[i++];
+			}
+			*p++ = 0;
+		}
+	}
+	return (n);
+}
+
+/* ==========================================================================
  * main
  * ======================================================================== */
 int main(argc, argv)
 	int argc; char **argv;
 {
 	putls("----------------------------------------------------\n");
-	putls("TMS9900 Relocatable Object Linker  Version 3.9.27\n");
+	putls("TMS9900 Relocatable Object Linker  Version 3.9.56\n");
 	putls("Original CP/M version: Alexander Cameron, January 1985\n");
 	putls("MSDOS/PC port:         Alexander Cameron, May 2010 - July 2019\n");
-	putls("Cleaner command syntax: Version 3.9.27\n");
+	putls("Explicit XREFS + PREL/AORG CT provenance\n");
 	putls("----------------------------------------------------\n");
+
+	argc = expand_args(argc, argv); /* '^' multi-line continuation  */
+	argv = xargv;
 
 	getsw(argc, argv);      /* parse command-line switches  */
 	getmem();               /* initialise memory buffers    */
 	phase1(argc, argv);     /* pass 1: load and link        */
 	if (!okay())
 		error("\nQuitting with unresolved symbols.");
+	/* v3.9.54: memory usage report - make buffer exhaustion a number
+	 * watched approaching, not a silent hang at some future link.     */
+	{
+		char msz[9];
+		putls("Memory: code ");
+		itou((bpnext - buffer), msz, 8);
+		putls(msz);
+		putls(" symbols ");
+		itou(((buffer + memsize) - snext), msz, 8);
+		putls(msz);
+		putls(" free ");
+		itou((snext - bpnext), msz, 8);
+		putls(msz);
+		putls(" bytes\n");
+	}
+
 	phase2();               /* pass 2: write output file    */
 }
 
@@ -1080,7 +1521,7 @@ getndx()
 /* ==========================================================================
  * getsw  -  Parse command-line switches.
  * ======================================================================== */
-void getsw(argc, argv)
+getsw(argc, argv)
 	int argc; char **argv;
 {
 	char  arg[NAMESIZE];
@@ -1128,8 +1569,14 @@ void getsw(argc, argv)
 				pagemode = YES;
 			} else {                               /* -P# explicit page          */
 				/* Only set pagemode here; curpage is set sequentially
-				 * in the phase1 loop so each module gets the right page. */
-				int pg = arg[2] - '0';
+				 * in the phase1 loop so each module gets the right page.
+				 *
+				 * v3.9.55: parse ALL the digits. This read arg[2] alone,
+				 * so "-P10" validated as page 1 and the trailing '0' was
+				 * discarded -- see the matching fix in the phase1 loop. */
+				int pg;
+				if (utoi(arg + 2, &pg) <= 0)
+					usage();
 				if (pg < 0 || pg > 15)
 					usage();
 				pagemode = YES;
@@ -1193,7 +1640,7 @@ link()
 			if (pass == 2)
 				*(xrnext + FLG) &= HIGH;    /* clear data flags on pass 2     */
 
-			if (pass == 1 && *(epnext + FLG) != PREL) {
+			if (pass == 1 && (*(epnext + FLG) & ~FLGAORG & 0xFF) != PREL) {
 				/* External symbol has a data entry point - flag for later    */
 				*(xrnext + FLG) |= FLGEXT;
 				xrnext = getint(xrprev = xrnext);
@@ -1216,6 +1663,29 @@ link()
 }
 
 /* ==========================================================================
+ * XREFS scheme: explicit external-reference ingest support
+ * ======================================================================== */
+int   in_xrefs  = NO;      /* currently inside an EXT "XREFS" group          */
+int   xref_left = 0;       /* CHAIN reference locations still expected       */
+char *xref_sym  = 0;       /* xr entry receiving the current group's nodes   */
+
+/* Allocate one symbol-table-sized node (reuses the NXT + VAL slots) to hold
+ * one converted reference location.  Same allocator newsym() uses.          */
+char *xnode_alloc()
+{
+	char *n;
+	if ((n = sfree))
+		sfree = getint(sfree);
+	else {
+		n = snext;
+		snext -= SSZ;
+		if (snext < bpnext)
+			error("- Must Specify -B Switch\n");
+	}
+	return n;
+}
+
+/* ==========================================================================
  * load  -  Load one module from the current REL file into the code buffer
  *          (or into the overflow file once in-memory space is exhausted).
  * ======================================================================== */
@@ -1223,9 +1693,11 @@ load()
 {
 	char           str[9];
 	char           rtbuf[CRELSIZE]; /* scratch for relocation table entries   */
-	unsigned int   doffloc, coffloc, creloff, dreloff;
+	unsigned   doffloc, coffloc, creloff, dreloff;
 	int            gval;            /* return value from getrel()             */
+	int            aorg_prel;      /* CT provenance for current PREL word     */
 	unsigned base;            /* temp for page map base calculation     */
+	unsigned pmceil;          /* v3.9.57: ceiling of the declared span  */
 
 	if (monitor)
 		puts2("\nLoading module: ", modname);
@@ -1242,16 +1714,13 @@ load()
 	cloc_at_ename = cloc;        /* default: set now in case ENAME was pre-consumed */
 	pm_aorg_valid = NO;
 	pm_aorg_base  = 0;
+	pm_aorg_true  = 0;
+	pm_aorg_cloc  = 0;
+	pm_saw_abs_prel = NO;
 
 	do {
 		poll(YES);
 		gval = getrel();
-
-		if (monitor && gval >= ENAME) {    /* skip noise: ABS/PREL/DREL/CREL */
-			putls(" g=");
-			itox(gval, str, 2);
-			putls(str);
-		}
 
 		switch (gval) {
 
@@ -1296,37 +1765,48 @@ load()
 		/* ---- Program-relative or data-relative word ---------------------- */
 		case DREL:
 		case PREL:
-			/* Add the module's segment base to relocatable references.
-			 * v3.9.13: In paged/overlay mode, AORG modules may already
-			 * carry absolute virtual addresses such as 0x2000.  Do not
-			 * add cmod to those, or the emitted EXE block will contain
-			 * addresses beyond the intended 4K virtual page window.
-			 * Flat COM/LGO keeps the stable 3.9.11 rule unchanged.      */
+			/*
+			 * Preserve PREL provenance in CT$.
+			 *
+			 * Ordinary relocatable PREL:
+			 *     CT value = module-relative value + cmod
+			 *              = link-buffer target address
+			 *
+			 * AORG PREL:
+			 *     CT value = final virtual target address, unchanged
+			 *
+			 * The old field>=PAGE_SEG test cannot be repeated during emit:
+			 * a normal resident link-buffer target can also be >= PAGE_SEG
+			 * (IOCORE fmptr was >1856). CT_AORG_PREL carries the
+			 * distinction explicitly to Phase 2.
+			 */
+			aorg_prel = NO;
 			if (item == PREL) {
-				if (pagemode && field >= PAGE_SEG) {
-					;               /* AORG virtual address: already based */
-				} else if (pagemode && field == 0 && pm_aorg_valid) {
-					;               /* v3.9.20: AORG XCHAIN terminator - keep zero.
-					                 * Non-AORG paged modules still relocate PREL 0
-					                 * below, preserving the OVLMGR table-base fix. */
+				if (pagemode && pm_aorg_valid &&
+				    cloc >= pm_aorg_cloc) {
+					aorg_prel = YES;       /* explicit AORG_MARK provenance */
+					/* field is already the final virtual address */
+				} else if (pagemode && curpage != 0 &&
+				           pm_aorg_valid && field >= PAGE_SEG) {
+					/* v3.9.54: curpage gate added - see EPOINT note. */
+					/*
+					 * Backward compatibility for older R99 files without
+					 * AORG_MARK.  Only an AORG (overlay-page) module can
+					 * carry a final virtual >= PAGE_SEG here; a page-0
+					 * resident word >= PAGE_SEG is just a buffer offset
+					 * past the first 4K and must still relocate normally.
+					 */
+					aorg_prel = YES;
+					pm_saw_abs_prel = YES;
 				} else if (type != 3 || field != 0) {
-					field += cmod;  /* v3.9.25: paged PREL 0 is a real module-base ref */
+					field += cmod;
 				}
 			}
-			if (item == DREL) field += dmod;
+			if (item == DREL)
+				field += dmod;
 
 			/* Track minimum PREL value to detect AORG base address.
 			 * PSIZE fires before PREL in the file; EPROG fixes up pmstart. */
-			if (monitor && item == PREL && type != 3) {
-				putls("  PREL seen: field=");
-				itox(field, str, 4);
-				putls(str);
-				putls(" pagemode=");
-				putls(pagemode ? "YES" : "NO");
-				putls(" pmmin_valid=");
-				putls(pmmin_valid ? "YES" : "NO");
-				putls("\n");
-			}
 			if (item == PREL && type != 3 && pagemode && field != 0) {
 				if (!pmmin_valid || field < pmmin_addr) {
 					pmmin_addr  = field;
@@ -1343,7 +1823,11 @@ load()
 					error("- Code relocation table full (65535 entries)\n");
 				put16int(rtbuf,     cloc);
 				put16int(rtbuf + 2, field);
-				rtbuf[4] = item;
+				if (item == PREL && aorg_prel)
+					rtbuf[4] = CT_AORG_PREL;
+				else
+					rtbuf[4] = item;
+
 				ctseek(crelptr);
 				write(ctfd, rtbuf, CRELSIZE);
 
@@ -1393,32 +1877,66 @@ load()
 
 		case EPROG:
 			first_module = NO;  /* no longer in first module */
-			/* Synthesise pagemap entry for pure AORG modules with no PSIZE.
-			 * These have no PSIZE record so npmods==0 at EPROG time.     */
-			if (pagemode && pmmin_valid && npmods == 0 && pmmin_addr > PAGE_SEG) {
-				base = pmmin_addr & ~(PAGE_SEG-1);
-				pmstart[npmods] = base;
-				pmend[npmods]   = base + cloc;
-				pmcmod[npmods]  = 0;
-				pmpage[npmods]  = curpage;
-				pm_modidx = npmods;
-				++npmods;
-				if (monitor) {
-					putls("  AORG synth: base=");
-					itox(base, str, 5); putls(str);
-					putls(" end=");
-					itox(base+cloc, str, 5); putls(str);
-					putls(" pg ");
-					itox(curpage, str, 3); puts2(str, "\n");
-				}
-			}
-			/* Fix up page map entry for AORG modules: PSIZE fires before
-			 * PREL records so we stored a placeholder. Now we have seen
-			 * all PREL values and can derive the correct AORG base.       */
+
+			/*
+			 * Finalise the page-map entry for the module just loaded.
+			 *
+			 * Do NOT use pmmin_addr here.  pmmin_addr is only the lowest
+			 * relocated PREL reference seen inside the module; it is not the
+			 * module's load origin.  OVLTEST proved this: pmmin_addr became
+			 * >1022 instead of the true AORG >1000, and OVLA/OVLB became
+			 * >2008 instead of the true AORG >2000.
+			 *
+			 * Only confirmed AORG state may revise the PSIZE-created page-map
+			 * entry.  Confirmed AORG state comes from AORG_MARK when present,
+			 * or from absolute PREL EPOINT values for older R99 files.
+			 */
 			if (pagemode && pm_aorg_valid && pm_modidx < npmods) {
-				base = pm_aorg_base;
+				base = pm_aorg_true ? pm_aorg_true : pm_aorg_base;
 				pmstart[pm_modidx] = base;
+				/* v3.9.35 (2.3): the page's buffer anchor is where the
+				 * AORG took effect, not the module start. Pre-AORG
+				 * preamble bytes remain in the relocatable stream.     */
+				if (pm_aorg_cloc > pmcmod[pm_modidx])
+					pmcmod[pm_modidx] = pm_aorg_cloc;
 				pmend[pm_modidx]   = base + (cloc - pmcmod[pm_modidx]);
+				/* v3.9.38 (spec 2.5): a paged module's bytes must all
+				 * live under ONE mapping register. Bytes past the 4KB
+				 * boundary are emitted through - and called through -
+				 * whatever page happens to occupy the NEXT segment's
+				 * register, silently corrupting it. This was a polite
+				 * Note for weeks while it broke builds. Now it is
+				 * fatal, with instructions.                            */
+				/*
+				 * v3.9.57: a module linked -Plo-hi DECLARED that it may
+				 * occupy several consecutive pages, so its ceiling is the
+				 * end of its LAST declared page.  split_pagemap_for_exe
+				 * breaks its blocks at each boundary and pages each one
+				 * correctly, so the bytes are NOT emitted through the
+				 * wrong register.
+				 *
+				 * This check runs when the AORG is applied, long before
+				 * the splitter sees the module - so without the span
+				 * allowance here the module is rejected before the span
+				 * support can do anything.
+				 *
+				 * Undeclared modules keep the one-segment rule exactly.
+				 */
+				pmceil = (pmstart[pm_modidx] & 0xF000) + 0x1000;
+				if (pmspan[pm_modidx])
+					pmceil = pmceil +
+					    (unsigned)(pmpgend[pm_modidx] -
+					               pmpage[pm_modidx]) * 0x1000;
+				if (pmend[pm_modidx] > pmceil) {
+					putls("\n*** FATAL (spec 2.5): module ");
+					putls(modname);
+					putls(" crosses a 4KB segment boundary by ");
+					itox(pmend[pm_modidx] - pmceil, str, 5);
+					putls(str);
+					putls(" bytes.\n    Widen -Plo-hi, split the module on a");
+					putls(" natural seam, or move shared helpers resident.\n");
+					exit(1);
+				}
 				if (monitor) {
 					putls("  AORG SETLC fixup: base=");
 					itox(base, str, 5); putls(str);
@@ -1426,23 +1944,8 @@ load()
 					itox(pmend[pm_modidx], str, 5); putls(str);
 					putls("\n");
 				}
-			} else if (pagemode && pmmin_valid && pm_modidx < npmods
-					&& pmmin_addr > PAGE_SEG) { /* AORG only: relocatable modules have small PREL values */
-				base = pmmin_addr & ~(PAGE_SEG-1);
-				if (base != pmstart[pm_modidx]) {
-					pmstart[pm_modidx] = base;
-					pmend[pm_modidx]   = base + (cloc - pmcmod[pm_modidx]);
-					if (monitor) {
-						putls("  AORG fixup: base=");
-						itox(base, str, 5);
-						putls(str);
-						putls(" end=");
-						itox(pmend[pm_modidx], str, 5);
-						putls(str);
-						putls("\n");
-					}
-				}
 			}
+
 			if (type == PREL) {
 				puts2("Start In ", modname);
 				goloc = field + cmod;
@@ -1455,14 +1958,56 @@ load()
 			pmmin_addr     = 0xFFFF;
 			pm_aorg_valid  = NO;
 			pm_aorg_base   = 0;
+			pm_aorg_true   = 0;
+			pm_aorg_cloc   = 0;
 			cloc_at_ename = cloc;  /* save cloc before SETLC records */
+			pm_saw_abs_prel = NO;
 			break;  /* entry names handled during search/library phase       */
 
+		case EXT:
+			/* XREFS marker; the XCHAIN header that follows carries the
+			 * count and drives group parsing.  Nothing to do here.      */
+			break;
+
 		case XCHAIN:
-			newsym(&xrprev, xrfirst, "xr");
+			/* XREFS group header: field = reference count, symbol = name.
+			 * Create one xr entry with an EMPTY location list; the CHAIN
+			 * items that follow supply the reference locations.          */
+			{
+				unsigned count = field;
+				field = 0;                 /* xr VAL = empty list head    */
+				type  = ABS;               /* stop newsym rebasing zero   */
+				newsym(&xrprev, xrfirst, "xr");
+				xref_sym = xrprev;         /* newsym left *prev = new ent */
+				putint(xref_sym + VAL, 0);
+				*(xref_sym + FLG) = PREL;  /* treat as a code external    */
+				xref_left = count;
+				in_xrefs  = (count != 0);
+			}
 			break;
 
 		case EPOINT:
+			/*
+			 * Backward-compatible AORG detection for older R99 files that
+			 * do not emit AORG_MARK.  Absolute PREL entry points are reliable
+			 * load-origin evidence; ordinary relocatable COM-style modules have
+			 * small entry offsets here and must not be treated as AORG.
+			 */
+			/* v3.9.54: gated on curpage != 0. A module NOT under an
+			 * explicit -P assignment is resident: its entry points are
+			 * module-relative OFFSETS, and any module larger than 4KB
+			 * has offsets >= PAGE_SEG that are NOT load-origin
+			 * evidence. Without this gate, a resident module was
+			 * AORG-classified the moment it outgrew 4KB, and its
+			 * initialized data was corrupted (the CC_DATA incident). */
+			if (pagemode && curpage != 0 && type == PREL && field >= PAGE_SEG) {
+				base = page_align(field);
+				if (!pm_aorg_valid || field < pm_aorg_true) {
+					pm_aorg_valid = YES;
+					pm_aorg_true  = field;
+					pm_aorg_base  = base;
+				}
+			}
 			newsym(&epprev, epfirst, "ep");
 			break;
 
@@ -1488,7 +2033,7 @@ load()
 					int pages_needed;
 					pmpage[npmods]  = pages_next;
 					/* Virtual start = page * 4KB segment size                */
-					base            = (unsigned)(pages_next << 12);
+					base            = (pages_next << 12);
 					pmstart[npmods] = base;
 					pmend[npmods]   = base + field;
 					pmcmod[npmods]  = cmod;
@@ -1499,11 +2044,23 @@ load()
 				} else {
 					pmpage[npmods] = curpage;
 				}
+				/* v3.9.57: carry the DECLARED span, not an inferred one. */
+				pmpgend[npmods] = (pmpage[npmods] == curpage)
+				                ? curpgend : pmpage[npmods];
+				pmspan[npmods]  = (pmpage[npmods] != 0 &&
+				                   pmpgend[npmods] > pmpage[npmods]);
 				pm_modidx  = npmods;         /* remember for EPROG fixup       */
 				pm_modsize = field;
 				++npmods;
-			} else
-				puts("\n- Warning: page map full, module not recorded\n");
+			} else {
+				/* v3.9.56: FATAL -- an unrecorded module is not emitted.
+				** BRACES ARE REQUIRED: without them only the first putls
+				** belongs to the else and exit(1) runs for EVERY module,
+				** killing the link at module 1. */
+				putls("\n*** FATAL: page map full, module not recorded\n");
+				putls("    Raise MAXPMODS in link99.c and rebuild.\n");
+				exit(1);
+			}
 			/* Reset per-module PREL tracking */
 			pmmin_valid = NO;
 			pmmin_addr  = 0xFFFF;
@@ -1535,10 +2092,15 @@ load()
 				csfd  = open(csfn, O_CREAT | O_TRUNC | O_RDWR | O_BINARY, 0644);
 				if (csfd < 0)
 					error2("- Cannot create overflow file ", csfn);
-				if (monitor) {
-					itox(cdisk, str, 8);
-					puts2(str, " Overflow Point in code\n");
-				}
+				/* v3.9.54: overflow engagement is ALWAYS announced.
+				 * This path is suspect in the pre-64K silent hang; if
+				 * you see this, prefer enlarging getmem() instead.    */
+				putls("\n*** WARNING: code overflow to DISK engaged at ");
+				itox(cdisk, str, 8);
+				putls(str);
+				putls("\n    The in-memory buffer is exhausted. The disk\n");
+				putls("    overflow path is little-tested on this port -\n");
+				putls("    prefer enlarging the buffer in getmem().\n");
 			}
 			break;
 
@@ -1594,24 +2156,37 @@ load()
 				if (type == PREL) {
 				csflag = TRUE;
 				dsflag = FALSE;
-				/* AORG modules emit absolute virtual addresses in SETLC
-				 * (BSS) records. Detect and strip the page base BEFORE
-				 * adding cmod; otherwise cmod inflates the already-absolute
-				 * address and produces a wildly oversized BSS region.
-				 * The AORG base is derived from pmmin_addr (lowest PREL seen
-				 * so far) if available, or from field itself.
-				 * Applied unconditionally: AORG produces absolute addresses
-				 * regardless of whether pagemode is active.                  */
-				if (field > PAGE_SEG) {
+				/* AORG modules assigned with -P emit absolute virtual
+				 * addresses in SETLC (BSS) records. Strip the page base
+				 * before adding cmod.
+				 *
+				 * CRITICAL: ordinary resident modules also have perfectly
+				 * valid module-relative SETLC values above >1000 when their
+				 * BSS exceeds 4KB. Those values must be preserved in full.
+				 * The old unconditional field>PAGE_SEG test packed CC1's
+				 * BSS out of the image, while EPOINT main retained its full
+				 * logical address. Match the v3.9.54 provenance rule: only
+				 * an explicitly paged module may use the AORG heuristic.   */
+				if (pagemode && curpage != 0 && field >= PAGE_SEG) {
 					unsigned aorg_base;
 					/* v3.9.18: remember explicit AORG SETLC base for EXE block
-					 * virtual start.  Do not alter resolve() behaviour here. */
-					aorg_base = (unsigned)(field & ~((unsigned)(PAGE_SEG - 1)));
+					 * virtual start.  Do not alter resolve() behaviour here.
+					 * NOTE: deliberately do NOT touch pm_aorg_true here.
+					 * This handler fires for every PREL record in the
+					 * module (unfiltered, always-overwrite) - for a large
+					 * module that's dozens of unrelated internal addresses,
+					 * not a meaningful "true start". Rounding made this
+					 * safe by accident (everything in one segment rounds
+					 * to the same page base); pm_aorg_true must not adopt
+					 * that same unfiltered signal. Only AORG_MARK (fires
+					 * once per explicit AORG directive, with proper
+					 * lowest-wins comparison) is a reliable source for it. */
+					aorg_base = page_align(field);
 					if (pagemode) {
 						pm_aorg_base  = aorg_base;
 						pm_aorg_valid = YES;
 					}
-					field = (unsigned)(field - aorg_base);
+					field = (field - aorg_base);
 				}
 				field += cmod;
 				while (cloc < field) {
@@ -1650,21 +2225,80 @@ load()
 			}
 			break;
 		/* ---- AORG marker: explicit absolute ORG address ----------------- */
-		case AORG_MARK:
+		case AORG_MARK:                 /* == CHAIN == 16 */
+			if (in_xrefs) {
+				/* reference location inside an XREFS group: convert the
+				 * runtime/AORG location to THIS module's packed code-buffer
+				 * offset before resolve() direct-patches it.
+				 *
+				 * Older R99 files do not emit AORG_MARK.  In that case
+				 * SETLC can set pm_aorg_valid/pm_aorg_base before any EPOINT
+				 * has supplied pm_aorg_true, while pm_aorg_cloc is still 0.
+				 * The old test therefore selected obuf=0, ovrt=0 and stored
+				 * the virtual XREF location (e.g. >906E) as though it were a
+				 * packed-buffer offset.  resolve() then patched the wrong
+				 * bytes and the emitted overlay retained its ABS 0 operand.
+				 *
+				 * Use the explicit AORG buffer anchor only when it actually
+				 * exists; otherwise the module's cmod is the packed-buffer
+				 * anchor.  For old page-aligned overlay R99 files, the SETLC
+				 * page base is the runtime anchor until EPOINT refines it. */
+				unsigned loc = field;
+				unsigned xbuf;
+
+				/*
+				 * XREFS groups are emitted near the front of older R99
+				 * modules, before PSIZE/SETLC has established cmod or
+				 * pm_aorg_base.  cloc_at_ename, however, is already the
+				 * packed-buffer anchor for THIS module.
+				 *
+				 * For an explicitly paged module the XREF location is an
+				 * absolute virtual address (e.g. >9056).  Old R99 files
+				 * have no AORG_MARK, so derive the 4K virtual segment
+				 * directly from the reference location and translate to
+				 * the packed-buffer address.  Spec 2.5 later enforces that
+				 * one paged module cannot cross a 4K segment boundary.
+				 *
+				 * This must NOT use cmod here: before PSIZE, cmod can still
+				 * belong to the previous module (or be zero).  That was why
+				 * an XREF such as >9056 was stored literally as buffer
+				 * offset >9056.  It appeared to work only when packed code
+				 * happened to occupy the same offset; changing an earlier
+				 * overlay size then broke unrelated later XREFs.
+				 */
+				if (pagemode && curpage != 0 && loc >= PAGE_SEG) {
+					if (pm_aorg_valid && pm_aorg_cloc && pm_aorg_true)
+						xbuf = pm_aorg_cloc + (loc - pm_aorg_true);
+					else
+						xbuf = cloc_at_ename + (loc - page_align(loc));
+				}
+				else {
+					/* Resident/ordinary module XREF locations are relative
+					 * to the module start. */
+					xbuf = cloc_at_ename + loc;
+				}
+				char *node = xnode_alloc();
+				putint(node + NXT, getint(xref_sym + VAL)); /* prepend    */
+				putint(node + VAL, xbuf);
+				putint(xref_sym + VAL, node);
+				if (--xref_left == 0)
+					in_xrefs = NO;
+				break;
+			}
 			/* v3.9.27: assembler emits this at every AORG directive.
 			 * field = absolute virtual address of the AORG.
-			 * Use lowest value seen as the module's base address.
-			 * For high AORG (>=PAGE_SEG): page-align the base.
-			 * For low AORG (<PAGE_SEG): use field directly as base.      */
+			 * Use lowest value seen as the module's base address.       */
 			if (pagemode) {
 				unsigned aorg_base;
-				if (field >= PAGE_SEG)
-					aorg_base = (unsigned)(field & ~((unsigned)(PAGE_SEG - 1)));
-				else
-					aorg_base = field;
+				aorg_base = page_align(field);
 				if (!pm_aorg_valid || aorg_base < pm_aorg_base) {
 					pm_aorg_base  = aorg_base;
 					pm_aorg_valid = YES;
+					pm_aorg_true  = field;   /* true addr, before rounding */
+					/* v3.9.35 (2.3): absolute code begins at the CURRENT
+					 * buffer position - bytes loaded before this item are
+					 * relocatable preamble and stay out of the page.      */
+					pm_aorg_cloc  = cloc;
 				}
 				if (monitor) {
 					putls("  AORG_MARK: addr=");
@@ -1680,7 +2314,7 @@ load()
 
 #ifdef DEBUG2
 	{
-		unsigned char *bp, *rp;
+		char *bp, *rp;
 		int i;
 
 		puts("Outputting external entry points:");
@@ -1694,7 +2328,7 @@ load()
 		bp = buffer;
 		printf("%04X  ", 0);
 		for (i = 0; i < cloc; i++) {
-			printf("%02X ", *bp++);
+			printf("%02X ", *bp++ & 0xFF);
 			if ((i + 1) % 16 == 0)
 				printf("\n%04X  ", i + 1);
 		}
@@ -1726,8 +2360,9 @@ newsym(prev, first, ts)
 	char **prev; char *first; char *ts;
 {
 	char *cp, *newent;
+	int   aorgsym;
 #ifdef DEBUG
-	char at[9];
+	char at[MAXSYM + 1];            /* itox() below prints MAXSYM digits       */
 #endif
 	if ((newent = sfree))
 		sfree = getint(sfree);  /* recycle a previously freed entry          */
@@ -1757,9 +2392,15 @@ newsym(prev, first, ts)
 	 * offset to them, or RUN99-style overlay XCHAINs become e.g. >298A
 	 * instead of the real runtime location >238A.  Relocatable symbols
 	 * and PREL zero still receive cmod as before. */
+	aorgsym = 0;
 	if (type == PREL) {
-		if (pagemode && field >= PAGE_SEG)
-			;
+		/* Resident modules (curpage == 0) can legitimately have entry
+		 * offsets >= PAGE_SEG once the module exceeds 4KB.  Those are
+		 * still module-relative and MUST receive cmod here and cbase
+		 * later in resolve().  Only an explicitly paged module can use
+		 * a >=PAGE_SEG PREL entry as an already-final AORG virtual. */
+		if (pagemode && curpage != 0 && field >= PAGE_SEG)
+			aorgsym = 1;    /* AORG virtual: cmod not added; remember it */
 		else
 			field += cmod;
 	}
@@ -1768,6 +2409,15 @@ newsym(prev, first, ts)
 	putint(newent + VAL, field);
 	strcpy(newent + SYM, symbol);
 	*(newent + FLG) = type;
+	/* v3.9.53: the cmod-skip branch above is the ONLY place the linker
+	 * knows a symbol's value is a final AORG virtual rather than a
+	 * buffer offset.  Once csize grows past the first AORG page the two
+	 * are numerically indistinguishable, so the knowledge must be kept
+	 * here, not re-derived from value ranges later (resolve() tried,
+	 * and the same symbol resolved differently depending on WHEN it
+	 * resolved).                                                      */
+	if (aorgsym)
+		*(newent + FLG) |= FLGAORG;
 
 #ifdef DEBUG
 	if (monitor) {
@@ -1941,7 +2591,7 @@ phase1(argc, argv)
 					/* Shift cbase to start of paged region (0x2000)
 					 * cloc stays where it is - paged modules placed
 					 * relative to new cbase from this point on.      */
-					cbase = (unsigned)(pages_min << 12);
+					cbase = (pages_min << 12);
 					cloc  = 0;
 					if (monitor) {
 						putls("\nAuto page mode: pages ");
@@ -1957,14 +2607,67 @@ phase1(argc, argv)
 						putls(sz);
 					}
 				} else {
-					/* -P#: explicit page for following module(s) */
-					curpage       = infn[2] - '0';
+					/* -P#: explicit page for following module(s)
+					 *
+					 * v3.9.55: PARSE ALL THE DIGITS.
+					 *
+					 * This was "curpage = infn[2] - '0'" -- a single
+					 * digit. "-P10" therefore silently became page 1
+					 * and the '0' was dropped. The module's bytes went
+					 * to page 1 while DREL's OVL_TABLE (which parses
+					 * the number correctly) said page 10, so at run
+					 * time the mapper faithfully mapped a page that had
+					 * never been written and the CPU executed garbage.
+					 *
+					 * Cost the M33a preprocessor overlay a debugging
+					 * session: CC_MACS at -P10 landed in page 1 and
+					 * >9000 held nothing. Pages 0-9 had always worked,
+					 * which is why this survived eight milestones.
+					 *
+					 * A page number out of range is now fatal rather
+					 * than silently truncated.                        */
+					int pg, pgend, nlen;
+					char *pp;
+					nlen = utoi(infn + 2, &pg);
+					if (nlen <= 0 || pg < 0 || pg > 15) {
+						putls("\n*** FATAL: bad -P page number: ");
+						putls(infn);
+						putls("\n    Valid range is -P0 to -P15.\n");
+						exit(1);
+					}
+					/*
+					 * v3.9.57: optional page SPAN, -Plo-hi.
+					 *
+					 * -P10     one page, exactly as before.  Nothing in the
+					 *          emitter behaves differently for a single page,
+					 *          so existing images are unchanged.
+					 * -P10-12  the module MAY occupy pages 10,11,12.  The
+					 *          author is stating the intent; the linker does
+					 *          not guess it from addresses.
+					 */
+					pgend = pg;
+					pp    = infn + 2 + nlen;
+					if (*pp == '-') {
+						pp++;
+						if (utoi(pp, &pgend) <= 0 || pgend < pg || pgend > 15) {
+							putls("\n*** FATAL: bad -P page span: ");
+							putls(infn);
+							putls("\n    Use -Plo-hi with 0 <= lo <= hi <= 15.\n");
+							exit(1);
+						}
+					}
+					curpgend      = pgend;
+					curpage       = pg;
 					pages_auto    = NO;
 					pagemode      = YES;
 					prev_was_page = YES;
 					if (monitor) {
-						itox(curpage, sz, 3);
+						itou(curpage, sz, 3);
 						puts2("\nPage mode: curpage=", sz);
+						if (curpgend != curpage) {
+							itou(curpgend, sz, 3);
+							puts2(" spanning to page ", sz);
+						}
 					}
 				}
 			} else {
@@ -2101,6 +2804,41 @@ phase1(argc, argv)
 	if (!oflag && !pagemode && !pages_auto && pmmin_global < 0xFFFF && pmmin_global >= 0x1000)
 		cbase = 0;
 	csize = cloc;
+	/* v3.9.40: compare actual resident runtime spans with actual
+	 * non-zero-page runtime spans. csize is the packed linker-buffer
+	 * size and includes overlay images, so cbase+csize is not a valid
+	 * resident-runtime end address. */
+	if (pagemode) {
+		int ri, pi;
+
+		for (ri = 0; ri < npmods; ri++) {
+			if (pmpage[ri] != 0 || pmend[ri] <= pmstart[ri])
+				continue;
+
+			for (pi = 0; pi < npmods; pi++) {
+				if (pmpage[pi] == 0 || pmend[pi] <= pmstart[pi])
+					continue;
+
+				/* Half-open ranges [start,end) overlap iff each starts
+				 * before the other ends. */
+				if (pmstart[ri] < pmend[pi] &&
+				    pmstart[pi] < pmend[ri]) {
+					putls("\n*** FATAL: resident range ");
+					itox(pmstart[ri], sz, 5); putls(sz);
+					putls("-");
+					itox(pmend[ri] - 1, sz, 5); putls(sz);
+					putls(" overlaps paged range ");
+					itox(pmstart[pi], sz, 5); putls(sz);
+					putls("-");
+					itox(pmend[pi] - 1, sz, 5); putls(sz);
+					putls(" on page ");
+					itox(pmpage[pi], sz, 3); putls(sz);
+					putls(".\n");
+					exit(1);
+				}
+			}
+		}
+	}
 	dsize = dloc;
 	dbase = cbase + csize;
 	pass  = 2;
@@ -2173,7 +2911,7 @@ phase1(argc, argv)
 unsigned emit_data_block()
 {
 	unsigned        sz, szsave;
-	long            szpos;
+	int             szpos;
 	char            rtbuf[CRELSIZE];
 	char            str[6];
 
@@ -2204,7 +2942,27 @@ unsigned emit_data_block()
 		read(dtfd, rtbuf, CRELSIZE);
 		field = get16int(rtbuf + 2);
 
-		if (rtbuf[4] == PREL) field += xrplus + cbase;
+		/* v3.9.53 (revised): the first attempt guarded on
+		 * field >= PAGE_SEG here, repeating at emit time exactly the
+		 * heuristic the load()-side comment forbids: an ORDINARY
+		 * resident PREL word whose target sits past buffer offset
+		 * >1000 (IOCORE fmptr >1856; in Step 6 most of the resident
+		 * image) is numerically >= PAGE_SEG too, and would have been
+		 * emitted one cbase LOW.  Provenance already exists: load()
+		 * tags AORG-body PREL words CT_AORG_PREL (v3.9.52), so use
+		 * it, matching the phase-2 chain emitter's contract:
+		 *
+		 *   PREL          CT value is a link-buffer address: + cbase
+		 *   CT_AORG_PREL  CT value is final virtual: preserve
+		 *
+		 * (The 2026-07 double-relocation of level13/zerojump/store/
+		 * level1/primary was in resolve(), not here -- see newsym()
+		 * FLGAORG.)  xrplus always applies: it is an offset WITHIN
+		 * the target, not a relocation.                            */
+		if (rtbuf[4] == PREL)
+			field += xrplus + cbase;
+		if (rtbuf[4] == CT_AORG_PREL)
+			field += xrplus;
 		if (rtbuf[4] == DREL) field += xrplus + dbase;
 		xrplus = 0;
 
@@ -2249,7 +3007,8 @@ split_pagemap_for_exe()
 {
 	int i, j, oldn;
 	unsigned start, end, mod, remain, chunk, vbase;
-	int pg;
+	unsigned tonext;              /* v3.9.57: bytes to the next page boundary */
+	int pg, pgend, spans;
 
 	oldn = npmods;
 	for (i = 0; i < oldn; i++) {
@@ -2259,31 +3018,75 @@ split_pagemap_for_exe()
 		end    = pmend[i];
 		mod    = pmcmod[i];
 		pg     = pmpage[i];
+		pgend  = pmpgend[i];
 		vbase  = start;
 		pmbase[i] = vbase;
 		remain = end - start;
-		if (remain <= EXE_MAX_BLOCK)
-			continue;
+
+		/*
+		 * v3.9.57: does this module DECLARE a page span?
+		 *
+		 * Only a module linked -Plo-hi with hi > lo is split at page
+		 * boundaries and has its chunks renumbered.  Everything else -
+		 * page 0, -P10, -PAGES - takes exactly the path it always did,
+		 * so its output is unchanged.  The linker never infers a
+		 * boundary from an address; it is told where they are.
+		 */
+		spans = pmspan[i];
+
+		chunk = remain;
+		if (chunk > EXE_MAX_BLOCK)
+			chunk = EXE_MAX_BLOCK;
+		if (spans) {
+			tonext = (((start >> 12) + 1) << 12) - start;
+			if (chunk > tonext)
+				chunk = tonext;
+		}
+		if (chunk >= remain)
+			continue;                 /* fits one block - unchanged */
 
 		/* Shrink original entry to first chunk. */
-		pmend[i] = start + EXE_MAX_BLOCK;
-		start  += EXE_MAX_BLOCK;
-		mod    += EXE_MAX_BLOCK;
-		remain -= EXE_MAX_BLOCK;
+		pmend[i] = start + chunk;
+		start  += chunk;
+		mod    += chunk;
+		remain -= chunk;
 
 		while (remain) {
 			if (npmods >= MAXPMODS) {
-				puts("\n- Warning: page map full while splitting EXE block\n");
-				return;
+				/* v3.9.56: FATAL. This used to warn and return, leaving
+				** the rest of the image unwritten -- a clean link with
+				** the program truncated, and no symptom but one warning
+				** line. */
+				putls("\n*** FATAL: page map full while splitting EXE block\n");
+				putls("    The image needs more than MAXPMODS chunks.\n");
+				putls("    Raise MAXPMODS in link99.c and rebuild.\n");
+				exit(1);
 			}
 			chunk = remain;
 			if (chunk > EXE_MAX_BLOCK)
 				chunk = EXE_MAX_BLOCK;
+			if (spans) {
+				tonext = (((start >> 12) + 1) << 12) - start;
+				if (chunk > tonext)
+					chunk = tonext;
+			}
 			pmstart[npmods] = start;
 			pmend[npmods]   = start + chunk;
 			pmcmod[npmods]  = mod;
 			pmbase[npmods]  = vbase;
-			pmpage[npmods]  = pg;
+			if (spans) {
+				/* The page follows the address, within the declared span. */
+				pmpage[npmods] = pg + ((start >> 12) - (vbase >> 12));
+				if (pmpage[npmods] > pgend) {
+					putls("\n*** FATAL: module overruns its declared page span\n");
+					putls("    Widen -Plo-hi or shrink the module.\n");
+					exit(1);
+				}
+			} else {
+				pmpage[npmods] = pg;
+			}
+			pmpgend[npmods] = pgend;
+			pmspan[npmods]  = spans;
 			npmods++;
 			start  += chunk;
 			mod    += chunk;
@@ -2331,10 +3134,12 @@ emit_chain_blocks()
 	int      i, p;
 	int      live[MAXPMODS];
 	int      nlive;
-	long     hdrpos[MAXPMODS];
+	int      hdrpos[MAXPMODS];
 	unsigned blksz[MAXPMODS];
+	unsigned realsz[MAXPMODS];    /* v3.9.57: data length BEFORE padding    */
+	int      spanblk[MAXPMODS];   /* v3.9.57: block of a DECLARED-span module */
 	unsigned zero, next_off, pg_word, start_word, size_word;
-	long     cur;
+	int      cur;
 	char     str[8];
 
 	merge_pagemap();
@@ -2354,7 +3159,7 @@ emit_chain_blocks()
 
 		zero = 0;
 		write99(outfd, &zero, 2);             /* next_offset - patched later */
-		pg_word    = (unsigned)pmpage[i];
+		pg_word    = pmpage[i];
 		start_word = pmstart[i];
 		write99(outfd, &pg_word,    2);       /* page  */
 		write99(outfd, &start_word, 2);       /* start */
@@ -2366,11 +3171,60 @@ emit_chain_blocks()
 		xrplus  = 0;
 		if (csfd) rewind(csfd);
 
-		blksz[p] = emit_page_block_data(i, &cloc, &ref);
+		blksz[p]   = emit_page_block_data(i, &cloc, &ref);
+		realsz[p]  = blksz[p];        /* v3.9.57: length before padding */
+		/*
+		 * v3.9.57: this block belongs to a module linked -Plo-hi with
+		 * hi > lo.  The flag records what was DECLARED - it is never
+		 * inferred from an address looking like a boundary.
+		 */
+		spanblk[p] = pmspan[i];
+		/*
+		 * Every NON-FINAL chain block must occupy one complete 0x200-byte
+		 * disk sector:
+		 *
+		 *     8-byte header + 0x1F8-byte payload = 0x200
+		 *
+		 * A short block followed immediately by another header leaves that
+		 * header part-way through a sector.  The Shell loader's refill logic
+		 * then loses the chain position when the staging buffer is reloaded.
+		 *
+		 * Do not alter the final block; its NEXT_OFFSET is zero and no
+		 * following header has to be found.
+		 */
+		if (p < nlive - 1) {
+			char pad;
+			pad = 0;
+
+			while (blksz[p] < EXE_MAX_BLOCK) {
+				write(outfd, &pad, 1);       /* <---- PAD TO 01F8 */
+				blksz[p]++;
+			}
+		}
+		else if (blksz[p] & 1) {
+			char pad;
+			pad = 0;
+			write(outfd, &pad, 1);           /* <---- FINAL BLOCK WORD ALIGN */
+			blksz[p]++;
+			realsz[p]++;                     /* the align byte is real data  */
+		}
+
 
 		cur = lseek(outfd, 0, SEEK_CUR);
 		lseek(outfd, hdrpos[p] + 6, SEEK_SET);
-		size_word = blksz[p];
+		/*
+		 * A declared-span module's blocks stop at page boundaries, so
+		 * their true length must be written even though the record is
+		 * still padded to a full sector: the loader maps ONCE per block
+		 * and would otherwise copy the padding across the boundary.
+		 * Every other module keeps the historic padded size - changing
+		 * that for all modules altered every existing image and hung the
+		 * Shell loader (v3.9.57 first attempt).
+		 */
+		if (spanblk[p])
+			size_word = realsz[p];
+		else
+			size_word = blksz[p];
 		write99(outfd, &size_word, 2);
 		lseek(outfd, cur, SEEK_SET);
 
@@ -2386,7 +3240,7 @@ emit_chain_blocks()
 
 	for (p = 0; p < nlive; p++) {
 		if (p < nlive - 1)
-			next_off = (unsigned)(hdrpos[p + 1] - hdrpos[p]);
+			next_off = (hdrpos[p + 1] - hdrpos[p]);
 		else
 			next_off = 0;
 		cur = lseek(outfd, 0, SEEK_CUR);
@@ -2410,12 +3264,20 @@ unsigned emit_page_block_data(idx, cloc_p, ref_p)
 {
 	unsigned  szsave, tp, entry_start, entry_end, reloc_base;
 	char      rtbuf[CRELSIZE];
+	char      str[9];
 	int       pg;
 
 	pg          = pmpage[idx];
 	entry_start = pmcmod[idx];
 	entry_end   = pmcmod[idx] + (pmend[idx] - pmstart[idx]);
-	reloc_base  = (pmbase[idx] ? pmbase[idx] : pmstart[idx]) - pmcmod[idx];
+
+	/*
+	 * Runtime-minus-buffer delta for this exact EXE chunk.
+	 * pmstart and pmcmod advance together when a block is split, so this
+	 * remains constant for resident modules and is also correct for
+	 * auto-assigned relocatable page modules.
+	 */
+	reloc_base  = pmstart[idx] - pmcmod[idx];
 	szsave      = 0;
 
 	while (*cloc_p < csize) {
@@ -2458,28 +3320,23 @@ unsigned emit_page_block_data(idx, cloc_p, ref_p)
 		read(ctfd, rtbuf, CRELSIZE);
 		field = get16int(rtbuf + 2);
 
-		/* v3.9.14: Paged EXE emission has two PREL cases.
+		/*
+		 * Phase-2 PREL contract:
 		 *
-		 *  1. Absolute AORG words are already virtual addresses
-		 *     (e.g. 0x2008) and must be preserved.
+		 *   PREL          CT value is a link-buffer address.
+		 *                 Convert it with this block's runtime-buffer delta.
 		 *
-		 *  2. AORG words that were normalised to page-local offsets
-		 *     during pass 1 (e.g. 0x0008) must be relocated by this
-		 *     block's virtual start address, not by the common COM
-		 *     base.  Otherwise overlay page 2/3 code branches into
-		 *     0x1000+ instead of 0x2000+.
+		 *   CT_AORG_PREL CT value is already a final virtual AORG address.
+		 *                 Preserve it; apply only an explicit XPOFF addend.
 		 *
-		 * Flat COM/LGO does not use this routine.                    */
-		if (rtbuf[4] == PREL) {
-			if (field < PAGE_SEG) {
-				if (pmpage[idx] != 0 && pmstart[idx] >= PAGE_SEG)
-					field += xrplus + reloc_base;
-				else
-					field += xrplus + cbase;
-			} else
-				field += xrplus;
-		}
-		if (rtbuf[4] == DREL) field += xrplus + dbase;
+		 * This replaces the invalid numeric field<PAGE_SEG heuristic.
+		 */
+		if (rtbuf[4] == PREL)
+			field += xrplus + reloc_base;
+		if (rtbuf[4] == CT_AORG_PREL)
+			field += xrplus;
+		if (rtbuf[4] == DREL)
+			field += xrplus + dbase;
 		xrplus = 0;
 
 		write99(outfd, &field, 2);
@@ -2523,7 +3380,7 @@ phase2()
 	/* Locate the entry point of 'main' in the symbol table                  */
 	epnext2 = getint(epfirst);
 	while (YES) {
-		if (strcmp(StringPadRight(mainname, MAXSYM, " "), epnext2 + SYM) == 0) {
+		if (strcmp(mainname, epnext2 + SYM) == 0) {
 			_debug("Found main at goloc = ", getint(epnext2 + VAL));
 			goloc = getint(epnext2 + VAL);
 		}
@@ -2711,287 +3568,64 @@ readdref()
 
 
 /* ==========================================================================
- * xbuf_from_runtime  -  Convert a runtime/virtual code address back to the
- *                       linker's code-buffer offset.
+ * resolve  -  Patch every explicit reference location for one xr==ep pair.
  *
- *  In flat COM this is usually addr-cbase.  In paged EXE output, AORG
- *  overlay chains use runtime virtual addresses such as >238A while the
- *  bytes live in the combined link buffer at pmcmod+(addr-pmstart).
- * ======================================================================== */
-unsigned xbuf_from_runtime(addr)
-	unsigned addr;
-{
-	int i;
-
-	if (pagemode) {
-		for (i = 0; i < npmods; i++) {
-			if (pmend[i] == pmstart[i]) continue;
-			if (addr >= pmstart[i] && addr < pmend[i])
-				return (pmcmod[i] + (addr - pmstart[i]));
-		}
-	}
-
-	if (addr < cloc)
-		return (addr);
-	if (addr >= cbase)
-		return (addr - cbase);
-	return (addr);
-}
-
-
-/* ==========================================================================
- * is_overlay_chain_base_sentinel  -  Detect a false XCHAIN continuation that
- *                                   is actually the link-buffer base of an
- *                                   AORG overlay module.
- *
- * Some REL streams present PREL 0 chain terminators before the subsequent
- * AORG SETLC record tells the linker that the module is absolute.  At load
- * time those zeros may have been recorded as cmod/pmcmod.  During resolve(),
- * a next-chain value equal to pmcmod for a non-common paged module is not a
- * runtime address; it is the original zero terminator seen too early.
- *
- * This is deliberately generic: it uses only page-map metadata and does not
- * special-case BASIC99, RUN99, symbol names, or absolute addresses.
- * ======================================================================== */
-int is_overlay_chain_base_sentinel(addr)
-	unsigned addr;
-{
-	int i;
-
-	if (!pagemode)
-		return (NO);
-
-	for (i = 0; i < npmods; i++) {
-		if (pmend[i] == pmstart[i]) continue;
-		if (pmpage[i] == 0) continue;          /* common/page0 is legitimate */
-		if (pmstart[i] < PAGE_SEG) continue;   /* not an AORG overlay span   */
-		if (addr == pmcmod[i])
-			return (YES);
-	}
-	return (NO);
-}
-
-
-/* ===========================================================================
- * paged_chain_span  -  Find the runtime page-map span containing an XCHAIN
- *                      location.  External-reference chains are emitted by one
- *                      module, so all links in a valid chain should stay inside
- *                      the same module runtime span.  A link that jumps outside
- *                      that span is a stale/overwritten chain value, not a real
- *                      continuation.
- * ======================================================================== */
-int paged_chain_span(addr, lo_p, hi_p)
-	unsigned addr; unsigned *lo_p; unsigned *hi_p;
-{
-	int i;
-
-	if (!pagemode)
-		return (NO);
-	for (i = 0; i < npmods; i++) {
-		if (pmend[i] == pmstart[i]) continue;
-		if (addr >= pmstart[i] && addr < pmend[i]) {
-			*lo_p = pmstart[i];
-			*hi_p = pmend[i];
-			return (YES);
-		}
-	}
-	return (NO);
-}
-
-int chain_link_valid_for_span(addr, lo, hi)
-	unsigned addr, lo, hi;
-{
-	if (addr == 0)
-		return (YES);
-	if (is_overlay_chain_base_sentinel(addr))
-		return (YES);     /* caller will turn this into end-of-chain */
-	if (addr >= lo && addr < hi)
-		return (YES);
-	return (NO);
-}
-
-/* ==========================================================================
- * resolve  -  Patch all external-reference chain entries for one symbol.
- *
- *  The code image (buffer or overflow file) stores .CT$ file offsets at
- *  each relocatable word location.  The .CT$ entry at that offset
- *  holds: [code-location:2][chain-value:2][type:1].  We walk the chain
- *  until chain-value reaches zero, writing the resolved absolute address.
+ *  XREFS scheme.  The xr entry's VAL is the head of an internal list of
+ *  reference locations, each already converted to a code-buffer offset at
+ *  ingest time (when the owning module was unambiguous).  Every location
+ *  holds an ABS 0 placeholder; we write the entry point's final absolute
+ *  address straight into it.  ABS words carry no CT entry, so COM/page
+ *  emit copies them through unchanged.  No chain walk, no page-map guessing.
  * ======================================================================== */
 resolve()
 {
-	unsigned int   tp;
-	unsigned xrloc, epval, xbuf;
-	unsigned xt, et, tbase;
-	unsigned prev_xrloc;          /* detect repeating chain locations   */
-	unsigned chain_lo, chain_hi;
-	int      have_chain_span;
-	char rtbuf[CRELSIZE];           /* scratch for one relocation table entry */
+	char    *node, *nextnode;
+	unsigned epval, value, xbuf;
+	char wb[2];
 	char at[7];
-	char str[9];
-	int  rdebug;
-	rdebug = 1;
-	prev_xrloc = 0;
-	have_chain_span = NO;
-	chain_lo = chain_hi = 0;
-
-	if (!(xrloc = getint(xrnext + VAL)))    /* head of ext-ref chain         */
-		return;
 
 	epval = getint(epnext + VAL);
 
-	xt    = *(xrnext + FLG);
-	et    = *(epnext + FLG);
-	have_chain_span = paged_chain_span(xrloc, &chain_lo, &chain_hi);
+	/* Final absolute runtime address of the resolved entry point.
+	 *
+	 * v3.9.53: the old discriminator (epval >= cloc: "a buffer offset
+	 * is always < cloc") was sound only while total code size stayed
+	 * below the first AORG page.  At csize >B2A6 with pages at >8000,
+	 * an AORG epval such as >8A2A sits BELOW cloc by the time later
+	 * modules resolve against it, and the same symbol then resolved
+	 * to different values at different times (down1: AC80 for the
+	 * CC_EXPR_C references, BC80 for CC_EXPR_D's).  Use the
+	 * provenance flag newsym() records instead -- value ranges
+	 * cannot distinguish these populations once they overlap.       */
+	if ((*(epnext + FLG) & ~FLGAORG & 0xFF) == DREL)
+		value = epval + dbase;
+	else if (*(epnext + FLG) & FLGAORG)
+		value = epval;              /* paged AORG: already virtual   */
+	else
+		value = epval + cbase;
 
-	/* Compute the absolute target address in the runtime image.
-	 * v3.9.19: AORG PREL entry values already are runtime virtual
-	 * addresses (e.g. BASIC99 symbols at >1396, RUN99 at >2000). */
-	if (et == PREL) {
-		if (pagemode && epval >= PAGE_SEG)
-			tbase = epval;
-		else
-			tbase = epval + cbase;
-	}
-	if (et == DREL) tbase = epval + dbase;
-
-	/* Cross-page collision check (v3.7): with transparent GAL mapping,
-	 * cross-page calls are plain BL/RT - no trampolines needed.
-	 * However two modules on different pages sharing a virtual 4KB
-	 * segment is a hard error: only one mapping can be active.
-	 * pageof() returns -1 for untagged (common) addresses; those are
-	 * always safe and need no check.                                  */
-	{
-		int caller_pg, callee_pg;
-		int caller_seg, callee_seg;
-		caller_pg  = pageof(xrloc + cbase);
-		callee_pg  = pageof(tbase);
-		caller_seg = (xrloc + cbase) >> 12;  /* top 4 bits = segment index */
-		callee_seg = tbase >> 12;
-		if (caller_pg >= 0 && callee_pg >= 0 &&
-		    caller_pg != callee_pg &&
-		    caller_seg == callee_seg) {
-			puts2("\n- Error: segment collision: ", xrnext + SYM);
-			puts2(" caller page ", caller_pg ? "1" : "0");
-			puts2(" callee page ", callee_pg ? "1" : "0");
-			puts2(" share segment ", "");
-			/* non-fatal: report all collisions then let okay() abort   */
-		}
-	}
-
-	do {
-		/* end-of-chain sentinel                                              */
-		if (xrloc == 0)
-			break;
-		/* v3.9.21: AORG overlay zero terminator may have been recorded as
-		 * the module's link-buffer base before SETLC exposed the AORG base. */
-		if (is_overlay_chain_base_sentinel(xrloc))
-			break;
-		/* repeated location means circular chain - treat as end             */
-		if (xrloc == prev_xrloc)
-			break;
-		prev_xrloc = xrloc;
-
-		if (++rdebug > 5000) {
-			puts("Resolving Error: likely duplicate entry names - quitting");
-			exit(0);
+	node = getint(xrnext + VAL);
+	while (node) {
+		xbuf = getint(node + VAL);
+		if (xbuf < cdisk)
+			put16int(buffer + xbuf, value);
+		else {
+			wb[0] = value >> 8;             /* TMS order (hi,lo)          */
+			wb[1] = value & 0xff;
+			xrseek(xbuf - cdisk);
+			write(csfd, wb, 2);
 		}
 		if (monitor) {
-			poll(YES);
-			putls("\n Resolving external ");
-			itox(xt, at, 5);
-			puts2("xt = ", at);
-			itox(xrloc, at, 5);
-			puts2(" xrloc=", at);
-			putls((xt == PREL) ? "' to " : "\" to ");
-			itox(tbase, at, 5);
-			putls(at);
-			puts2(" for ", xrnext + SYM);
-			itox(nxr, at, 5);
-			puts2(" nxr=", at);
+			putls("\n  xref ");   putls(xrnext + SYM);
+			itox(xbuf, at, 5);    putls(" @");  putls(at);
+			itox(value, at, 5);   putls(" = "); putls(at);
 		}
-
-		switch (xt) {
-
-		/* ---- Data-relative reference ----------------------------------------
-		 * In TMS9900 Small-C, DREL XCHAIN references are code instructions that
-		 * reference data symbols (e.g. MOV @_var, R0).  The chain locations are
-		 * in the CODE segment, not the data segment, so chain-walking is
-		 * identical to PREL.  Only tbase differs (uses dbase, set above).
-		 * Fall through to PREL.
-		 * ------------------------------------------------------------------- */
-		case DREL:
-
-		/* ---- Program-relative reference ---------------------------------- */
-		case PREL:
-			/* v3.9.19: xrloc may be a paged runtime virtual address.
-			 * Convert it back through the page map before touching buffer/.O$. */
-			xbuf = xbuf_from_runtime(xrloc);
-			if (xbuf < cdisk) {
-				/* Location is in the in-memory code buffer                   */
-				tp = get16int(buffer + xbuf);
-				if (tp == 0 || tp >= crelptr) {
-					/* End of chain - direct patch for assembly externals      */
-					put16int(buffer + xbuf, tbase);
-
-				} else {
-					/* tp is a byte offset into the code relocation table     */
-					ctseek(tp);
-					read(ctfd, rtbuf, CRELSIZE);
-					nxr       = get16int(rtbuf + 2);
-					if (nxr == xrloc) nxr = 0;  /* self-ref = end of chain  */
-					if (have_chain_span && !chain_link_valid_for_span(nxr, chain_lo, chain_hi)) nxr = 0;
-					xt        = rtbuf[4];
-					rtbuf[4]  = et;
-					put16int(rtbuf + 2, epval);
-					ctseek(tp);
-					write(ctfd, rtbuf, CRELSIZE);
-					if (nxr == 0)
-						tp = 0;     /* signal end-of-chain                    */
-				}
-			} else {
-				/* Location is in the code overflow file (.O$)                */
-				xrseek(xbuf - cdisk);
-				read(csfd, &tp, 2);
-				if (tp == 0) {
-					xrseek(xbuf - cdisk);
-					write(csfd, &tbase, 2);
-				} else {
-					ctseek(tp);
-					read(ctfd, rtbuf, CRELSIZE);
-					nxr       = get16int(rtbuf + 2);
-					if (nxr == xrloc) nxr = 0;  /* self-ref = end of chain  */
-					if (have_chain_span && !chain_link_valid_for_span(nxr, chain_lo, chain_hi)) nxr = 0;
-					xt        = rtbuf[4];
-					rtbuf[4]  = et;
-					put16int(rtbuf + 2, epval);
-					ctseek(tp);
-					write(ctfd, rtbuf, CRELSIZE);
-				}
-			}
-			break;
-		}
-
-		xrloc = nxr;
-	} while (tp);
-
-#ifdef DEBUG2
-	{
-		unsigned i;
-		unsigned char *bp, *rp;
-
-		puts("Outputting final buffer:");
-		bp = buffer;
-		printf("%04X  ", 0);
-		for (i = 0; i < cloc; i++) {
-			printf("%02X ", *bp++);
-			if ((i + 1) % 16 == 0)
-				printf("\n%04X  ", i + 1);
-		}
-		puts("\n\nOutputting final creltble (disk .CT$ file, offsets only):");
-		printf("crelptr offset = %u\n", crelptr);
+		nextnode = getint(node + NXT);
+		putint(node + NXT, sfree);          /* recycle the node           */
+		sfree = node;
+		node  = nextnode;
 	}
-#endif
+	putint(xrnext + VAL, 0);
 }
 
 /* ==========================================================================
@@ -3060,6 +3694,7 @@ usage()
 	      "  -B           big-endian output\n"
 	      "  -S           Small-C mode\n"
 	      "  -M           monitor/verbose output\n"
+	      "  A trailing ^ or , continues the command on the next input line.\n"
 	      "  Transparent GAL mapping: cross-page calls are plain BL/RT, no trampolines.\n"
 	      "  Segment collision (two pages sharing a 4KB virtual segment) is a link error.");
 }
@@ -3068,9 +3703,9 @@ usage()
  * ctseek  -  Seek to byte offset 'off' in the code relocation table file.
  * ======================================================================== */
 ctseek(idx)
-	unsigned int idx;
+	unsigned idx;
 {
-	if (lseek(ctfd, (long)idx * CRELSIZE, SEEK_SET) == EOF)
+	if (lseek(ctfd, idx * CRELSIZE, SEEK_SET) == EOF)
 		error("- Seek error in code relocation table (.CT$)");
 }
 
@@ -3078,9 +3713,9 @@ ctseek(idx)
  * dtseek  -  Seek to entry index 'idx' in the data relocation table file.
  * ======================================================================== */
 dtseek(idx)
-	unsigned int idx;
+	unsigned idx;
 {
-	if (lseek(dtfd, (long)idx * CRELSIZE, SEEK_SET) == EOF)
+	if (lseek(dtfd, idx * CRELSIZE, SEEK_SET) == EOF)
 		error("- Seek error in data relocation table (.DT$)");
 }
 
