@@ -13,7 +13,7 @@ extern int
  item,			/* current item code */
  type,			/* type field */
  field;			/* current bit field */
-extern char symbol[9];		/* current string */
+extern char symbol[MAXSYM + 1];		/* current string */
 
 
 /*

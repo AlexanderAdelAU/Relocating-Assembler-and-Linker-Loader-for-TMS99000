@@ -16,7 +16,7 @@ field; /* current bit field */
 char *bp; /* current pointer in byte buffer */
 int nbytes; /* number of bytes in file */
 int nbr; /* number of bytes read */
-extern char symbol[9]; /* current string */
+extern char symbol[MAXSYM + 1]; /* current string (defined in link99.c) */
 
 char bytebuf[BUFSIZE];
 
@@ -90,7 +90,7 @@ int getspec() { /* get next special item */
 	case 9: /* external + offset */
 	case 10: /* size of data area */
 	case 11: /* set loading location counter */
-	case 12: /* chain addr (fill chain with lc) */
+	case 12: /* chain addr (fill chain with lc) / AORG_MARK */
 	case 13: /* size of program */
 		if (gettyp() == ERR || getfld() == ERR)
 			return (ERR);
@@ -129,8 +129,10 @@ int getsym() { /* get symbol */
 	cp = symbol;
 	save = field; /* save field */
 	if (!getbits(BITPSYM))
-		return (ERR); /* get 4-bit symbol length 2^n = MAXSYM  BITPSYM is 3 or 4*/
+		return (ERR); /* get BITPSYM-bit symbol length (4 bits -> 0..15 == MAXSYM) */
 	i = field; /* capture symbol length */
+	if (i > MAXSYM)
+		return (ERR); /* refuse over-length name; never overrun symbol[] */
 	while (i--) {
 		if (!getbits(8))
 			return (ERR); /* get next byte */
