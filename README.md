@@ -2,7 +2,7 @@
 
 ## Overview
 
-`link99` is a relocatable cross linker for the TMS9900 architecture, producing `.COM` and `.EXE` binaries for the TMS99105 SBC. It processes `.R99` relocatable object modules produced by the `r99` cross-assembler, resolves external references, and generates flat or paged chain format output binaries.
+`link99` is a relocatable cross linker for the TMS9900 architecture, producing `.COM` and `.EXE` binaries for the TMS99105 SBC. It processes `.R99` relocatable object modules produced by the `r99` cross-assembler, resolves external references, and generates flat or paged chain format output binaries that will run on a TMS99000 family processor.
 
 **Authors:**
 - J.E. Hendrix — original Small-MAC linker (8080/CP/M, 1985)
