@@ -308,9 +308,7 @@ gcc -I Includes -o link99.exe link99\link99.c rel99\GETREL.c rel99\PUTREL.c rel9
 | `link99/link99.c` | The linker |
 | `rel99/` | `GETREL.c` (the packed bit-stream reader for `.R99` files), `PUTREL.c`, `SEEREL.c` |
 | `cfunctions/` | Small-C run-time helpers (`itox`, `utoi`, `getarg`, `extend` …) |
-| `Includes/` | `rel99.h`, `stdio.h`, `fcntl.h` and the REL format headers |
-
-`cfunctions/BSEEK.C` is not needed by `link99`. It includes `clib.h`, which is not in this repository, so leave it out of the build if your shell matches `*.c` case-insensitively.
+| `Includes/` | `rel99.h`, `stdio.h`, `clib.h`, `fcntl.h` and the REL format headers |
 
 ---
 
