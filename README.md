@@ -8,7 +8,60 @@
 - J.E. Hendrix — original Small-MAC linker (8080/CP/M, 1985)
 - Alex Cameron — TMS9900 port (1984), Eclipse cross-compiler (2015), ongoing development
 
-**Current version:** 3.9.10
+**Current version:** 3.9.59
+
+---
+
+## Tools in this repository
+
+This repository holds the Windows **cross** toolchain for the TMS9900/TMS99105. These tools run on a PC and produce code for the SBC; they are used to build programs such as [SMALLC99](https://github.com/AlexanderAdelAU/SmallC99-TMS99105-Native-C-Compiler) and the [native SBC tools](https://github.com/AlexanderAdelAU/TMS99105-Native-Toolchain).
+
+| Folder | Tool | What it does |
+|---|---|---|
+| `r99/` | **r99** | Relocatable cross-assembler: `.A99` source → `.R99` object module |
+| `link99/` | **link99** | Linker: `.R99` modules and libraries → `.COM` or paged `.EXE` (documented below) |
+| `drel/` | **drel** | Dumps `.R99`/`.LIB` files, and generates the overlay include files `OVLADDR.INC` and `OVLTABLE.INC` |
+| `Includes/`, `cfunctions/`, `rel99/` | | Shared headers, Small-C run-time functions and the REL file reader/writer used by the tools |
+
+A typical build is: compile C to assembly with `smallcp` (from [Small-C-Plus-for-TMS9900-99000](https://github.com/AlexanderAdelAU/Small-C-Plus-for-TMS9900-99000)), assemble with `r99`, then link with `link99`.
+
+---
+
+## r99 — TMS9900 Relocatable Cross-Assembler
+
+`r99` assembles TMS9900/TMS99105 assembly source (`.A99`) into a relocatable object module (`.R99`) in the Microsoft REL-style format that `link99` reads. It is based on William C. Colley III's 1980 9900 cross-assembler, extended by Alex Cameron for relocation and the TMS99105.
+
+### Usage
+
+```
+r99 PROG [options]
+```
+
+`PROG` is the source name without extension. The options are a single word of letter pairs, in the CP/M style of the original:
+
+| Option | Meaning |
+|---|---|
+| `S`*d* | Read the source `PROG.A99` from drive *d* (`A`–`D`), or `S-` for the current drive |
+| `H`*d* | Write the object module `PROG.R99` to drive *d*, or `H-` for the current drive |
+| `L`*d* | Write a listing `PROG.L99` to drive *d*, or `L-` for the current drive; `LX` lists to the console |
+
+Example — assemble `PROG.A99` on drive C and write `PROG.R99`, as the SMALLC99 build does:
+
+```
+r99 PROG SCHC
+link99 PROG.COM PROG.R99
+```
+
+### Source language
+
+- The full TMS9900 instruction set, plus the TMS99105 additions (`BIND`, `BLSK`, `DIVS`, `MPYS`, `LST`, `LWP`, `TMB`, `TCMB`, `TSMB`).
+- Directives: `AORG`, `ORG`, `EQU`, `SET`, `BSS`, `BYTE`, `WORD`, `TEXT`, `EVEN`, `DXOP`, `IF`/`ELSE`/`ENDI`, `INCL`, `NAM`, `END`.
+- Linking: `ENT symbol` makes a symbol visible to other modules; `EXT symbol` refers to a symbol in another module.
+- Symbols may be up to 15 characters, matching the REL format limit.
+
+### Building
+
+`r99` is K&R C built with the Windows (MinGW) compiler, together with the shared `Includes/` headers and the `cfunctions/` run-time (excluding `cfunctions/mess.c`, which `r99` provides itself). It assumes 32-bit pointers.
 
 ---
 
