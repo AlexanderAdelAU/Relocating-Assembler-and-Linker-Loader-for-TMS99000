@@ -85,3 +85,23 @@ references. Those tests verify the reader, NOT runtime execution.
 
 The Windows toolchain main, SMALLC99 main and native SBC tools remain out of
 scope for source changes at this stage.
+
+
+## Real SMALLC99 compatibility finding (read-only evidence)
+
+The current SMALLC99 resident bridge module exports names also exported by
+overlay implementations: constexpr and expression (CC_EXPR_A), test
+(CC_EXPR_B), and statement (CC_STMT). The resident definitions forward via
+the R_* trampoline entries. The present LINK99 symbols are sorted, and its
+newsym() inserts equal names after earlier entries; link() walks that table.
+The actual target therefore depends on link input order, not just symbol
+name or logical group. This is a design constraint for the V2 resolver.
+
+The phase-1 checker deliberately marks duplicate exports as errors; it is
+not yet capable of reproducing LINK99 resolution semantics. DO NOT use this
+prototype to reject a working SMALLC99 build. A future version must record
+ordered module definitions and distinguish resident bridge symbols from
+overlay implementation entry points before classifying those references.
+A naive name-only graph produces false cross-overlay warnings.
+
+Observed against SMALLC99 main 95b4412d; no production changes were made.
