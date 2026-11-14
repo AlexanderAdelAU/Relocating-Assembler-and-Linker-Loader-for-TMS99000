@@ -291,18 +291,20 @@ Key fields:
 
 ## Building
 
-`link99` is a standard C program:
+`link99` is K&R C, built on Windows with MinGW `gcc`, together with the shared headers, run-time functions and REL reader in this repository:
 
-```bash
-gcc -o link99 link99.c getrel.c -I.
+```
+gcc -I Includes -o link99.exe link99\link99.c rel99\GETREL.c rel99\PUTREL.c rel99\SEEREL.c cfunctions\*.c
 ```
 
-On Windows with MSVC:
-```
-cl link99.c getrel.c
-```
+| Folder | Provides |
+|---|---|
+| `link99/link99.c` | The linker |
+| `rel99/` | `GETREL.c` (the packed bit-stream reader for `.R99` files), `PUTREL.c`, `SEEREL.c` |
+| `cfunctions/` | Small-C run-time helpers (`itox`, `utoi`, `getarg`, `extend` …) |
+| `Includes/` | `rel99.h`, `stdio.h`, `fcntl.h` and the REL format headers |
 
-`getrel.c` implements the packed bit-stream reader used to decode `.R99` files.
+`cfunctions/BSEEK.C` is not needed by `link99`. It includes `clib.h`, which is not in this repository, so leave it out of the build if your shell matches `*.c` case-insensitively.
 
 ---
 
@@ -311,7 +313,7 @@ cl link99.c getrel.c
 **Unresolved externals:**
 - Ensure `ENT symbol` is in the module providing the symbol
 - Ensure `EXT symbol` is in the module using it
-- Check symbol name truncation — names are limited to 10 characters
+- Check symbol name truncation — names are limited to 15 characters (`MAXSYM` in `rel99.h`)
 
 **Wrong address for symbol at module offset 0:**
 - Fixed in v3.9.6 — `field=0` PRels were not getting `cmod` added
