@@ -1,0 +1,21 @@
+name: Overlay V2 phase 1 (experimental)
+
+on:
+  push:
+    branches:
+      - feature/overlay-v2-phase1
+    paths:
+      - 'overlay_v2/**'
+      - '.github/workflows/overlay-v2-phase1.yml'
+  workflow_dispatch:
+
+jobs:
+  rel99-dependency-regressions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Run read-only REL99 parser and dependency tests
+        run: python -m unittest discover -s overlay_v2 -p 'test_*.py' -v
