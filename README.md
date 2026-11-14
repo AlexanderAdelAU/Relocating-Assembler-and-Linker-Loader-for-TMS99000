@@ -61,7 +61,13 @@ link99 PROG.COM PROG.R99
 
 ### Building
 
-`r99` is K&R C built with the Windows (MinGW) compiler, together with the shared `Includes/` headers and the `cfunctions/` run-time (excluding `cfunctions/mess.c`, which `r99` provides itself). It assumes 32-bit pointers.
+`r99` is K&R C built as a 32-bit Windows program with MinGW, together with the shared `Includes/` headers and the `cfunctions/` run-time:
+
+```
+gcc -I Includes -o r99.exe r99\*.c cfunctions\*.c
+```
+
+It stores pointers in `int`s, so build it as 32-bit (it runs fine on 64-bit Windows).
 
 ---
 
