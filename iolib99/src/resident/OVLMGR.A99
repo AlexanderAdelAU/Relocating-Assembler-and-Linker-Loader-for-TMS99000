@@ -1,0 +1,184 @@
+;*******************************************************************
+;  OVLMGR.A99 - Overlay Manager (consolidated, single manager)
+;  TMS99105 SBC
+;
+;  USAGE (unchanged from the caller's point of view):
+;    LI   R1,OVL_DECL   ; overlay ID
+;    CALL @OVLMGR       ; swap if needed (preserves R1-R11,R13-R15)
+;    CALL @OVL_FUNCn    ; call into that overlay's fixed slot
+;*******************************************************************
+
+;*******************************************************************
+;  MEMORY GEOMETRY
+;
+;    >1000-7FFF   resident / common (page 0)          28K
+;    >8000-BFFF   window A -- FOUR pages, segments 8..11
+;    >C000        shell / monitor
+;
+;  There is no window B any more. Codegen was never swappable: its
+;  page was mapped once at startup and stayed mapped for the life of
+;  the run, which is resident behaviour wearing an overlay's clothes.
+;  Making it genuinely resident released a whole segment to window A
+;  and retired OVL_TESTB and R_CODEON with it.
+;
+;  MAP_WIN_BASE (>80C0) is a CRU address and is unrelated to memory
+;  segment 8. It does not move.
+;*******************************************************************
+
+;*******************************************************************
+;  MULTI-PAGE OVERLAYS
+;
+;  The CCC3 expression engine measured 13656 bytes. A 4KB page cannot
+;  hold it; nor could the 8KB pair this file previously supported.
+;  Window A is therefore FOUR 4KB pages mapped SIMULTANEOUSLY, giving
+;  one contiguous 16K window >8000-BFFF. Every page of an overlay is
+;  addressable at once, so calls between them are ordinary direct
+;  calls -- no trampoline, no save-stack frame. The pages of ONE
+;  overlay are co-resident; DIFFERENT overlays remain mutually
+;  exclusive and a direct call between those is still never legal.
+;
+;  OVL_TABLE rows are now TEN words -- five (segment,page) pairs --
+;  so index = ID*20. A pair whose SEGMENT is zero ends the list, so
+;  a single-page overlay costs one iteration and behaves exactly as
+;  before. Pages are stored EXPLICITLY rather than assumed
+;  consecutive: an adjacency rule would be an unenforced invariant a
+;  later page reshuffle could break silently. DREL checks that the
+;  SEGMENTS are adjacent, because they form one virtual window, but
+;  the physical pages may be anything.
+;*******************************************************************
+
+;--- CONSTANTS ---
+	DXOP	PSEL,2
+	DXOP	PSEL_DIS,0
+	DXOP	PSEL_EN,1
+	DXOP	CALL,6
+	DXOP	RET,7
+	DXOP	WHEX,10
+	DXOP	MESG,14
+
+R0	EQU	0
+R1	EQU	1
+R2	EQU	2
+R3	EQU	3
+R4	EQU	4
+R5	EQU	5
+R6	EQU	6
+R7	EQU	7
+R8	EQU	8
+R9	EQU	9
+R10	EQU	10
+R11	EQU	11
+R12	EQU	12
+WP	EQU	13
+R13	EQU	13
+R14	EQU	14
+R15	EQU	15
+SP	EQU	10
+
+MAP_WIN_BASE:	EQU	080C0H
+BYTEWIDE:	EQU	2		;CRU BITS PER MAP REGISTER (unchanged)
+
+WINA_SEG2:	EQU	16		;window A's FIRST segment * 2
+					;(segment 8 -> >8000). Only used to
+					;decide when CUR_WINA_ID is updated.
+OVLROW:		EQU	20		;bytes per OVL_TABLE row (5 pairs)
+
+;--- overlay class IDs and the generated table ---
+	INCL	"OVLADDR.INC"
+	INCL	"OVLTABLE.INC"
+
+;--- PER-SEGMENT "currently loaded page" tracker, indexed segment*2 ---
+CURRENT_PAGE:
+	WORD	0,0,0,0,0,0,0,0
+	WORD	0,0,0,0,0,0,0,0
+
+;--- PER-SEGMENT "currently active overlay ID" tracker ---
+CURRENT_ID:
+	WORD	0,0,0,0,0,0,0,0
+	WORD	0,0,0,0,0,0,0,0
+
+;--- the window-A overlay ID, as a real data word OVLSTUBS can EXT.
+;    For a multi-page overlay this is the ID of the whole set: one ID
+;    identifies every page of it. ---
+CUR_WINA_ID:
+	WORD	0
+
+;*******************************************************************
+;  OVLMGR - Overlay Manager
+;
+;  Entry: R1 = overlay ID
+;  Modifies: R0, R2, R3, R5, R12
+;  Preserves: R1, R4, R6-R11, R13-R15  (R1 unchanged on return)
+;
+;  Walks the row's (segment,page) pairs until a zero segment ends the
+;  list, mapping each. The CRU-write sequence inside the loop is the
+;  proven one, unchanged; only the surrounding iteration is new.
+;*******************************************************************
+OVLMGR:
+	MOV	R1,R3
+	SLA	R3,4			;ID*16
+	MOV	R1,R5
+	SLA	R5,2			;ID*4
+	A	R5,R3			;R3 = ID*20, the row's byte offset
+	CLR	R5			;R5 = byte offset of the pair
+
+;--- one (segment,page) pair per iteration; segment 0 ends the row ---
+OVLM_PAIR:
+	MOV	R3,R2
+	A	R5,R2			;R2 -> this pair
+	MOV	@OVL_TABLE+2(R2),R0	;R0 = physical page. Read the page
+					;BEFORE overwriting R2 with the
+					;segment, so only one index is live.
+	MOV	@OVL_TABLE(R2),R2	;R2 = segment (source is fetched
+					;before the destination is written,
+					;so reusing R2 is safe here)
+	JEQ	OVLMGR_RET		;segment 0 -> no more pages
+	SLA	R2,1			;R2 = segment*2, which is both the
+					;table word-offset and the CRU scale
+
+	MOV	R1,@CURRENT_ID(R2)	;record the ID for this segment
+	CI	R2,WINA_SEG2		;window A's FIRST segment?
+	JNE	OVLM_P1
+	MOV	R1,@CUR_WINA_ID		;the EXT-able word OVLSTUBS reads
+OVLM_P1:
+	C	R0,@CURRENT_PAGE(R2)
+	JEQ	OVLM_NEXT		;this page is already here
+
+	MOV	R0,@CURRENT_PAGE(R2)
+
+	;--- PROVEN CRU-WRITE SEQUENCE, UNCHANGED ---
+	SLA	R0,8			;page into high byte for LDCR
+	PSEL_DIS
+	LI	R12,MAP_WIN_BASE
+	A	R2,R12			;R12 = MAP_WIN_BASE + segment*2
+	LDCR	R0,BYTEWIDE
+	PSEL_EN
+
+OVLM_NEXT:
+	AI	R5,4			;next pair
+	CI	R5,OVLROW
+	JNE	OVLM_PAIR
+
+OVLMGR_RET:
+	RET
+
+
+;*******************************************************************
+;  OVLMGR_INIT - Initialise overlay manager. Call once at startup.
+;*******************************************************************
+OVLMGR_INIT:
+	LI	R0,CURRENT_PAGE
+	LI	R1,32			;16 words CURRENT_PAGE + 16 words
+					;CURRENT_ID, contiguous
+OVLMGR_INITL:
+	CLR	*R0+
+	DEC	R1
+	JNE	OVLMGR_INITL
+	PSEL_EN
+	RET
+
+	ENT	OVLMGR
+	ENT	OVLMGR_INIT
+	ENT	CUR_WINA_ID
+
+	END

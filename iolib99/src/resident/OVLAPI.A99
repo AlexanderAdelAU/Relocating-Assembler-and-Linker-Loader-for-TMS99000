@@ -1,0 +1,92 @@
+; OVLAPI.A99 -- LINK99 resident overlay/data-bank adapters
+
+        DXOP    CALL,6
+        DXOP    RET,7
+
+R1      EQU     1
+
+        INCL    "OVLDEFS.INC"
+        INCL    "OVLADDR.INC"
+
+        EXT     OVLMGR
+        EXT     OVLMGR_INIT
+
+ovlinit:
+        CALL    @OVLMGR_INIT
+        RET
+
+runusage:
+        LI      R1,OVL_USAGE
+        CALL    @OVLMGR
+        CALL    @O_USAGE
+        RET
+
+mapsym:
+        LI      R1,OVL_SYM
+        CALL    @OVLMGR
+        RET
+
+mapc0:
+        LI      R1,OVL_CODE0
+        CALL    @OVLMGR
+        RET
+
+mapc1:
+        LI      R1,OVL_CODE1
+        CALL    @OVLMGR
+        RET
+
+mapc2:
+        LI      R1,OVL_CODE2
+        CALL    @OVLMGR
+        RET
+
+mapc3:
+        LI      R1,OVL_CODE3
+        CALL    @OVLMGR
+        RET
+
+mapc4:
+        LI      R1,OVL_CODE4
+        CALL    @OVLMGR
+        RET
+
+mapc5:
+        LI      R1,OVL_CODE5
+        CALL    @OVLMGR
+        RET
+
+mapc6:
+        LI      R1,OVL_CODE6
+        CALL    @OVLMGR
+        RET
+
+mapc7:
+        LI      R1,OVL_CODE7
+        CALL    @OVLMGR
+        RET
+
+mapc8:
+        LI      R1,OVL_CODE8
+        CALL    @OVLMGR
+        RET
+
+mapc9:
+        LI      R1,OVL_CODE9
+        CALL    @OVLMGR
+        RET
+
+        ENT     ovlinit
+        ENT     runusage
+        ENT     mapsym
+        ENT     mapc0
+        ENT     mapc1
+        ENT     mapc2
+        ENT     mapc3
+        ENT     mapc4
+        ENT     mapc5
+        ENT     mapc6
+        ENT     mapc7
+        ENT     mapc8
+        ENT     mapc9
+        END

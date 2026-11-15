@@ -1,0 +1,8 @@
+; OVL_CODE3.A99 -- scratch target-code bank marker
+
+        AORG    08000H
+C3:
+        WORD    0
+
+        ENT     C3
+        END
