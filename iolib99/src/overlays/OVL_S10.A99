@@ -1,8 +1,0 @@
-; OVL_S10.A99 -- symbol workspace page marker
-
-        AORG    0A000H
-S10:
-        WORD    0
-
-        ENT     S10
-        END
