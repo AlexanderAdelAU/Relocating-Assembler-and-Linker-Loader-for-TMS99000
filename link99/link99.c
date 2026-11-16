@@ -3,7 +3,7 @@
  Name        : link99.c K&R version
  Authors     : J. E. Hendrix (original Small-MAC linker, 1985)
                Alex Cameron (TMS9900 port 1984; Eclipse cross-compiler 2015)
- Version     : 3.9.59
+ Version     : 3.10.0
  Copyright   : Free to use
  Description : Relocatable linker/loader for the TMS9900 architecture.
                Based on the Small-MAC linkage editor (ver 1.0).
@@ -227,6 +227,21 @@
                        SMALLC99 crashed at start-up.  Real entries are never
                        type 0 (PREL 1, DREL 2, CREL 3, CT_AORG_PREL >41), so
                        a marker is now loc XRP16 AND type 0.
+ 3.10.0 A. Cameron     OVL99 overlay map, -Yfile.  The linker now builds
+                       the overlay glue itself, as 2.11BSD's ovld did:
+                       pages from the map, published entries renamed
+                       foo -> ~foo in their overlay, and one resident
+                       module OVLGLUE.R99 holding OVL_TABLE and a thunk
+                       per entry under the entry's own name.  Replaces
+                       ovlgen.ps1 and DREL -i (OVLADDR/OVLTABLE.INC).
+                       The window-owner rule is checked at link time.
+                       A map line "window 8-n" narrows the segments
+                       overlays may use, for data banks above them.
+                       See ovl_readmap().  Also: an external reference
+                       now ADDS the addend R99 leaves in the word, so
+                       @SYM+2 against an EXT works; it was overwritten
+                       with SYM.  No earlier object used one.  Without -Y the output is
+                       byte-identical to 3.9.59.
  3.9.58 (SBC_SMALLC99 structs work)
                        Three faults, each silent, found building a
                        SMALLC99 whose code passed 64K:
@@ -810,6 +825,40 @@ int            pages_auto;          /* non-zero: -PAGES auto-assign mode    */
 int            pages_min;           /* -PAGES range start                   */
 int            pages_max;           /* -PAGES range end                     */
 int            pages_next;          /* next page to auto-assign             */
+
+/* -------------------------------------------------------------------------
+ * v3.10.0: OVL99 overlay map (-Yfile).  See ovl_readmap() and ovl_glue().
+ * Kept to flat arrays and K&R C so the same code ports to the native
+ * SBC LINK99 unchanged.  Nothing here is touched unless -Y is given.
+ * ---------------------------------------------------------------------- */
+#define OVMAXMOD    48              /* modules named in the map             */
+#define OVMAXOVL    32              /* overlays (IDs 1..OVMAXOVL)           */
+#define OVMAXENT    192             /* published entries                    */
+#define OVPAIRS     5               /* (segment,page) pairs per table row   */
+#define OVMAPSIZE   8192            /* largest map file read                */
+#define OVWINLO     8               /* window >8000-BFFF: segments 8..11.   */
+#define OVWINHI     11              /* OVCALL owns the window via seg 8.    */
+#define OVGLUEFN    "OVLGLUE.R99"   /* generated resident glue module       */
+#define OVSYM       (MAXSYM + 1)    /* stride of the name arrays            */
+
+int  ovlmode;                       /* YES: -Y given                        */
+char ovmapfn[NAMESIZE];             /* the map file                         */
+int  novm;                          /* modules in the map                   */
+char ovm_name[OVMAXMOD * NAMESIZE]; /* module (file base name)              */
+int  ovm_page[OVMAXMOD];            /* first physical page                  */
+int  ovm_pgend[OVMAXMOD];           /* last physical page (span)            */
+int  ovm_ovl[OVMAXMOD];             /* overlay ID, 1-based                  */
+int  ovm_pm[OVMAXMOD];              /* page-map index once loaded, else -1  */
+int  ovm_aorg[OVMAXMOD];            /* YES: the module carried an AORG      */
+int  novo;                          /* overlays                             */
+char ovo_name[OVMAXOVL * OVSYM];    /* overlay name, index ID-1             */
+int  nove;                          /* published entries                    */
+char ove_name[OVMAXENT * OVSYM];    /* entry name as the module exports it  */
+int  ove_mod[OVMAXENT];             /* module (map index) that exports it   */
+int  ove_seen[OVMAXENT];            /* YES: its EPOINT was renamed          */
+int  ovcur;                         /* map index of module being loaded, -1 */
+int  ovwinhi;                       /* last segment overlays may map        */
+int  ovwinset;                      /* YES: the map has a window line       */
 
 /* v3.7: trampoline arrays removed - see emit_trampolines() deletion */
 
@@ -1419,7 +1468,7 @@ int main(argc, argv)
 	int argc; char **argv;
 {
 	putls("----------------------------------------------------\n");
-	putls("TMS9900 Relocatable Object Linker  Version 3.9.59\n");
+	putls("TMS9900 Relocatable Object Linker  Version 3.10.0\n");
 	putls("Original CP/M version: Alexander Cameron, January 1985\n");
 	putls("MSDOS/PC port:         Alexander Cameron, May 2010 - July 2019\n");
 	putls("Explicit XREFS + PREL/AORG CT provenance\n");
@@ -1568,6 +1617,7 @@ getsw(argc, argv)
 	argnbr  = 0;
 	dbase   = 0;
 	monitor = NO;
+	ovcur   = -1;
 
 	while (getarg(++argnbr, arg, NAMESIZE, argc, argv) != EOF) {
 		if (arg[0] != '-')
@@ -1599,6 +1649,13 @@ getsw(argc, argv)
 			big = YES;
 		else if (toupper(arg[1]) == 'M')
 			monitor = YES;
+		else if (toupper(arg[1]) == 'Y') {      /* v3.10.0: overlay map       */
+			if (!arg[2] || ovlmode)
+				usage();
+			strcpy(ovmapfn, arg + 2);
+			ovlmode  = YES;
+			pagemode = YES;     /* the map assigns pages, as -P would     */
+		}
 		else if (toupper(arg[1]) == 'S')
 			smallC = YES;
 		else if (toupper(arg[1]) == 'P') {      /* page assignment            */
@@ -1621,6 +1678,8 @@ getsw(argc, argv)
 		} else
 			usage();
 	}
+	if (ovlmode)
+		ovl_readmap();      /* fail before loading anything             */
 }
 
 /* ==========================================================================
@@ -2049,6 +2108,7 @@ load()
 					pm_aorg_base  = base;
 				}
 			}
+			ovl_rename();       /* v3.10.0: foo -> ~foo if published */
 			newsym(&epprev, epfirst, "ep");
 			break;
 
@@ -2539,6 +2599,503 @@ okay()
 }
 
 /* ==========================================================================
+ * OVL99 overlay map  (v3.10.0, -Yfile)
+ *
+ * BSD ovld for the TMS99105.  The map is the ONE declaration of an
+ * application's overlays; from it the linker builds every piece of
+ * overlay glue, so the application, the build script and DREL carry
+ * none:
+ *
+ *     # module   page   overlay  entries
+ *     OVLHELLO   4      GREET    hello greet
+ *     OVLGRET2   6      GREET    shout
+ *     OVLBYE     5      BYE      farewell count
+ *
+ *   module   base name of an object file on the command line.  Its
+ *            page comes from here, so it needs no -P.  A span is
+ *            written lo-hi, exactly as -Plo-hi.
+ *   overlay  modules sharing a name are ONE overlay: one ID, mapped
+ *            together.  IDs are given in order of first appearance.
+ *   entries  the functions anything outside the module may call, or
+ *            "-" for none.
+ *
+ * One optional line narrows the window overlays may map:
+ *
+ *     window   8-9         (or "window 8")
+ *
+ * The default is 8-11, all of >8000-BFFF.  An application that keeps
+ * data banks in part of the window (FileEdit: >9000-BFFF) declares the
+ * rest here and the link fails if an overlay strays into its banks.
+ *
+ * What -Y does:
+ *   1. Each published entry is RENAMED in its overlay module as it
+ *      loads: foo becomes ~foo (2.11BSD's convention).  Calls inside
+ *      the module were resolved by the assembler and stay direct.
+ *   2. Just before the first map module, the linker writes one
+ *      resident module, OVLGLUE.R99, and loads it at page 0:
+ *        OVL_TABLE   10-word rows, (segment,page) x 5, row = ID*20.
+ *                    Segments come from each module's own AORG,
+ *                    pages from the map.  Row 0 is unused.
+ *        foo:        LI R1,id / LI R2,~foo / B @OVCALL, one 12-byte
+ *                    thunk per entry under the entry's OWN name, so
+ *                    every external call to foo binds to the thunk.
+ *      OVL_TABLE is loaded as zeros and filled in place once every
+ *      module is in (ovl_finish).  The file is left on disk, so DREL
+ *      shows the thunks; the -M listing and the summary show the rows.
+ *   3. The rules OVCALL depends on are checked, not commented: every
+ *      module listed and AORG'd, every entry exported, every overlay
+ *      mapping segment 8 first and once, its segments contiguous
+ *      inside the window >8000-BFFF, no physical page used twice.
+ *
+ * The runtime (OVCALL, OVLMGR) is unchanged except that OVLMGR now
+ * says EXT OVL_TABLE instead of including a generated table.
+ * Without -Y none of this runs and the output is that of 3.9.59.
+ * ======================================================================== */
+char ovbuf[OVMAPSIZE + 1];
+
+ovl_die(line, a, b)
+	int line; char *a, *b;
+{
+	char num[8], *np;
+	putls("\n*** FATAL: overlay map ");
+	putls(ovmapfn);
+	if (line > 0) {
+		itou(line, num, 6);
+		for (np = num; *np == ' '; ++np)
+			;
+		putls(" line ");
+		putls(np);
+	}
+	putls(": ");
+	putls(a);
+	putls(b);
+	putls("\n");
+	exit(1);
+}
+
+/* index of name in a flat array of names, or -1 */
+int ovl_index(name, tab, stride, n)
+	char *name, *tab; int stride, n;
+{
+	int i;
+	for (i = 0; i < n; ++i)
+		if (!strcmp(name, tab + i * stride))
+			return (i);
+	return (-1);
+}
+
+/* parse "n" or "lo-hi"; NO if malformed or outside 1..15 */
+int ovl_pages(s, lo, hi)
+	char *s; int *lo, *hi;
+{
+	int n;
+	n = utoi(s, lo);
+	if (n <= 0)
+		return (NO);
+	*hi = *lo;
+	if (s[n] == '-') {
+		s += n + 1;
+		n = utoi(s, hi);
+		if (n <= 0)
+			return (NO);
+	}
+	if (s[n] != 0)
+		return (NO);
+	return (*lo >= 1 && *hi >= *lo && *hi <= 15);
+}
+
+/* ---- read and check the map (called from getsw) ---------------------- */
+#define OVMAXTOK 40
+ovl_readmap()
+{
+	int   fd, n, i, k, line, ntok, lo, hi;
+	char *tok[OVMAXTOK];
+	char *p, *q;
+
+	fd = open(ovmapfn, O_RDONLY | O_BINARY);
+	if (fd < 0)
+		ovl_die(0, "cannot open it", "");
+	n = read(fd, ovbuf, OVMAPSIZE + 1);
+	close(fd);
+	if (n > OVMAPSIZE)
+		ovl_die(0, "larger than 8192 bytes", "");
+	if (n < 0)
+		n = 0;
+	ovbuf[n] = 0;
+
+	ovwinhi = OVWINHI;
+	p = ovbuf;
+	line = 0;
+	while (*p) {
+		q = p;                          /* q = this line                    */
+		++line;
+		while (*p && *p != '\n')
+			++p;
+		if (*p)
+			*p++ = 0;
+
+		ntok = 0;                       /* split on blanks, stop at '#'     */
+		while (*q && *q != '#') {
+			if (*q == ' ' || *q == '\t' || *q == '\r') {
+				++q;
+				continue;
+			}
+			if (ntok == OVMAXTOK)
+				ovl_die(line, "too many fields", "");
+			tok[ntok++] = q;
+			while (*q && *q != ' ' && *q != '\t' && *q != '\r' && *q != '#')
+				++q;
+			if (*q == '#')
+				*q = 0;                 /* comment straight after a field   */
+			else if (*q)
+				*q++ = 0;
+		}
+		if (ntok == 0)
+			continue;
+		if (!stricmp(tok[0], "window")) {       /* window lo-hi          */
+			if (ntok != 2 || ovwinset || !ovl_pages(tok[1], &lo, &hi) ||
+			    lo != OVWINLO || hi > OVWINHI)
+				ovl_die(line, "want one 'window 8' to 'window 8-11', not ", tok[1]);
+			ovwinhi  = hi;
+			ovwinset = YES;
+			continue;
+		}
+		if (ntok < 4)
+			ovl_die(line, "want: module page overlay entries...", "");
+
+		/* module */
+		if (novm == OVMAXMOD)
+			ovl_die(line, "too many modules; raise OVMAXMOD", "");
+		if (strlen(tok[0]) >= NAMESIZE)
+			ovl_die(line, "module name too long: ", tok[0]);
+		for (i = 0; i < novm; ++i)
+			if (!stricmp(tok[0], ovm_name + i * NAMESIZE))
+				ovl_die(line, "module listed twice: ", tok[0]);
+		strcpy(ovm_name + novm * NAMESIZE, tok[0]);
+
+		/* page or span; no physical page may hold two modules */
+		if (!ovl_pages(tok[1], &lo, &hi))
+			ovl_die(line, "page must be 1-15 or lo-hi, not ", tok[1]);
+		for (i = 0; i < novm; ++i)
+			if (lo <= ovm_pgend[i] && ovm_page[i] <= hi)
+				ovl_die(line, "page already used by ", ovm_name + i * NAMESIZE);
+		ovm_page[novm]  = lo;
+		ovm_pgend[novm] = hi;
+
+		/* overlay: IDs in order of first appearance */
+		if (strlen(tok[2]) > MAXSYM)
+			ovl_die(line, "overlay name too long: ", tok[2]);
+		k = ovl_index(tok[2], ovo_name, OVSYM, novo);
+		if (k < 0) {
+			if (novo == OVMAXOVL)
+				ovl_die(line, "too many overlays; raise OVMAXOVL", "");
+			strcpy(ovo_name + novo * OVSYM, tok[2]);
+			k = novo++;
+		}
+		ovm_ovl[novm] = k + 1;
+		ovm_pm[novm]  = -1;
+
+		/* entries; ~name must fit the symbol table */
+		for (i = 3; i < ntok; ++i) {
+			if (!strcmp(tok[i], "-"))
+				continue;
+			if (strlen(tok[i]) > MAXSYM - 1)
+				ovl_die(line, "entry name longer than 14: ", tok[i]);
+			if (ovl_index(tok[i], ove_name, OVSYM, nove) >= 0)
+				ovl_die(line, "entry published twice: ", tok[i]);
+			if (nove == OVMAXENT)
+				ovl_die(line, "too many entries; raise OVMAXENT", "");
+			strcpy(ove_name + nove * OVSYM, tok[i]);
+			ove_mod[nove]  = novm;
+			ove_seen[nove] = NO;
+			++nove;
+		}
+		++novm;
+	}
+	if (novm == 0)
+		ovl_die(0, "declares no modules", "");
+}
+
+/* ---- map index of an object file, by base name, or -1 ---------------- */
+int ovl_find(fn)
+	char *fn;
+{
+	char  base[NAMESIZE];
+	char *s;
+	int   i;
+
+	s = fn;
+	for (i = 0; fn[i]; ++i)
+		if (fn[i] == '/' || fn[i] == '\\' || fn[i] == ':')
+			s = fn + i + 1;
+	for (i = 0; s[i] && s[i] != '.' && i < NAMESIZE - 1; ++i)
+		base[i] = s[i];
+	base[i] = 0;
+	for (i = 0; i < novm; ++i)
+		if (!stricmp(base, ovm_name + i * NAMESIZE))
+			return (i);
+	return (-1);
+}
+
+/* ---- EPOINT hook: foo -> ~foo for an entry published by this module -- */
+ovl_rename()
+{
+	int i, n;
+
+	if (ovcur < 0)
+		return;
+	for (i = 0; i < nove; ++i) {
+		if (ove_mod[i] == ovcur && !strcmp(symbol, ove_name + i * OVSYM)) {
+			n = strlen(symbol);         /* <= 14: checked in ovl_readmap    */
+			while (n >= 0) {
+				symbol[n + 1] = symbol[n];
+				--n;
+			}
+			symbol[0] = '~';
+			ove_seen[i] = YES;
+			return;
+		}
+	}
+}
+
+/* ---- REL writing helpers --------------------------------------------- */
+ovl_put(it, ty, fl, s)
+	int it, ty; unsigned fl; char *s;
+{
+	item  = it;
+	type  = ty;
+	field = fl;
+	strcpy(symbol, s);
+	if (!putrel())
+		ovl_die(0, "cannot write ", OVGLUEFN);
+}
+
+ovl_word(w)
+	unsigned w;
+{
+	ovl_put(ABS, 0, (w >> 8) & 0xFF, "");   /* TMS9900: high byte first      */
+	ovl_put(ABS, 0, w & 0xFF, "");
+}
+
+/* ---- the glue module ---------------------------------------------------
+ *
+ * Resident code must lie BELOW the overlays in the link buffer: a module's
+ * runtime address is cbase + its buffer offset, so one loaded after the
+ * window's modules would land inside the window.  The glue is therefore
+ * written and loaded just before the FIRST map module, when its size is
+ * already known from the map (IDs and entries) but the segments are not -
+ * they come from each module's AORG.  ovl_emit() loads OVL_TABLE as zeros
+ * and ovl_finish() fills the rows in place once every module is in.
+ * ------------------------------------------------------------------------ */
+unsigned ovtbl;                     /* buffer offset of OVL_TABLE           */
+int      ovord[OVMAXENT];           /* entries in thunk order               */
+
+ovl_emit()
+{
+	int  i, j, k, id, t, tbl, size;
+	char tname[MAXSYM + 1];
+
+	t = 0;                          /* thunk order: by ID, then map order   */
+	for (id = 1; id <= novo; ++id)
+		for (i = 0; i < novm; ++i)
+			if (ovm_ovl[i] == id)
+				for (j = 0; j < nove; ++j)
+					if (ove_mod[j] == i)
+						ovord[t++] = j;
+	tbl  = (novo + 1) * OVPAIRS * 4;
+	size = tbl + nove * 12;
+
+	outrel = open(OVGLUEFN, O_CREAT | O_TRUNC | O_RDWR | O_BINARY, 0644);
+	if (outrel < 0)
+		ovl_die(0, "cannot create ", OVGLUEFN);
+	outrem   = 8;
+	outchunk = 0;
+	ovl_put(PNAME, 0, 0, "OVLGLUE");
+	ovl_put(ENAME, 0, 0, "OVL_TABLE");
+	for (t = 0; t < nove; ++t)
+		ovl_put(ENAME, 0, 0, ove_name + ovord[t] * OVSYM);
+	ovl_put(DSIZE, ABS, 0, "");
+	ovl_put(PSIZE, PREL, size, "");
+	for (k = 0; k < tbl; k += 2)            /* rows filled by ovl_finish   */
+		ovl_word(0);
+	for (t = 0; t < nove; ++t) {            /* one thunk per entry         */
+		ovl_word(0x0201);                   /* LI  R1,id                   */
+		ovl_word(ovm_ovl[ove_mod[ovord[t]]]);
+		ovl_word(0x0202);                   /* LI  R2,~name                */
+		ovl_word(0);
+		ovl_word(0x0460);                   /* B   @OVCALL                 */
+		ovl_word(0);
+	}
+	ovl_put(EPOINT, PREL, 0, "OVL_TABLE");
+	for (t = 0; t < nove; ++t)
+		ovl_put(EPOINT, PREL, tbl + t * 12, ove_name + ovord[t] * OVSYM);
+	for (t = 0; t < nove; ++t) {
+		tname[0] = '~';
+		strcpy(tname + 1, ove_name + ovord[t] * OVSYM);
+		ovl_put(EXT, 0, 0, REL99_EXT_XREFS);
+		ovl_put(XCHAIN, ABS, 1, tname);
+		ovl_put(CHAIN, PREL, tbl + t * 12 + 6, "");
+	}
+	if (nove) {
+		ovl_put(EXT, 0, 0, REL99_EXT_XREFS);
+		ovl_put(XCHAIN, ABS, nove, "OVCALL");
+		for (t = 0; t < nove; ++t)
+			ovl_put(CHAIN, PREL, tbl + t * 12 + 10, "");
+	}
+	ovl_put(EPROG, ABS, 0, "");
+	ovl_put(EFILE, 0, 0, "");
+	close(outrel);
+
+	/* load it like any other resident module */
+	inrel = open(OVGLUEFN, O_RDONLY | O_BINARY);
+	if (inrel < 0)
+		ovl_die(0, "cannot reopen ", OVGLUEFN);
+	puts3("\nOpening R99 File ", OVGLUEFN, " (generated from the overlay map)\n");
+	curpage  = 0;
+	curpgend = 0;
+	ovcur    = -1;
+	ovtbl    = cloc;                /* no SETLC: OVL_TABLE is its first byte */
+	ifilelbuf();
+	getname();
+	load();
+	link();
+	close(inrel);
+}
+
+/* one word into the loaded code, in memory or in the overflow file */
+ovl_poke(off, w)
+	unsigned off, w;
+{
+	char wb[2];
+	if (off < cdisk)
+		put16int(buffer + off, w);
+	else {
+		wb[0] = w >> 8;                 /* TMS order (hi,lo)               */
+		wb[1] = w & 0xFF;
+		xrseek(off - cdisk);
+		write(csfd, wb, 2);
+	}
+}
+
+/* ---- after the command line: check everything, fill OVL_TABLE -------- */
+ovl_finish()
+{
+	int  i, j, k, id, np, pm, s0, t, cspg;
+	int  seg[OVPAIRS], pg[OVPAIRS];
+	char str[9];
+
+	/* everything the map declares is here, and placed */
+	for (i = 0; i < novm; ++i) {
+		if (ovm_pm[i] < 0)
+			ovl_die(0, "module not on the command line: ", ovm_name + i * NAMESIZE);
+		if (!ovm_aorg[i])
+			ovl_die(0, "module has no AORG, so no window address: ",
+			        ovm_name + i * NAMESIZE);
+	}
+	for (i = 0; i < nove; ++i)
+		if (!ove_seen[i]) {
+			putls("\n*** FATAL: overlay map ");
+			putls(ovmapfn);
+			putls(": ");
+			putls(ove_name + i * OVSYM);
+			putls(" is not an entry point of ");
+			putls(ovm_name + ove_mod[i] * NAMESIZE);
+			putls("\n    Is it spelled as the module exports it?\n");
+			exit(1);
+		}
+
+	putls("\nOVL99 overlay map ");
+	putls(ovmapfn);
+	putls(":\n");
+	cspg = csfd ? ctell(csfd) : 0;
+	for (id = 1; id <= novo; ++id) {
+		np = 0;
+		for (i = 0; i < novm; ++i) {
+			if (ovm_ovl[i] != id)
+				continue;
+			pm = ovm_pm[i];
+			s0 = (pmstart[pm] >> 12) & 15;
+			for (k = 0; k <= ovm_pgend[i] - ovm_page[i]; ++k) {
+				if (np == OVPAIRS)
+					ovl_die(0, "more than 5 pages in overlay ",
+					        ovo_name + (id - 1) * OVSYM);
+				j = np++;                   /* insert, sorted by segment    */
+				while (j > 0 && seg[j - 1] > s0 + k) {
+					seg[j] = seg[j - 1];
+					pg[j]  = pg[j - 1];
+					--j;
+				}
+				seg[j] = s0 + k;
+				pg[j]  = ovm_page[i] + k;
+			}
+		}
+		/* OVCALL saves ONE owner: the overlay OVLMGR records when it
+		 * maps segment 8.  So segment 8 first and once, the rest
+		 * contiguous after it, and nothing past the window.         */
+		if (seg[0] != OVWINLO)
+			ovl_die(0, "does not map segment 8 first: overlay ",
+			        ovo_name + (id - 1) * OVSYM);
+		if (seg[np - 1] > ovwinhi) {
+			putls("\n*** FATAL: overlay map ");
+			putls(ovmapfn);
+			putls(": overlay ");
+			putls(ovo_name + (id - 1) * OVSYM);
+			putls(" maps segment ");
+			itox(seg[np - 1], str, 2);
+			putls(str);
+			putls(", outside the window 8-");
+			itox(ovwinhi, str, 2);
+			putls(str);
+			putls(ovwinset ? " the map declares\n" : " (>8000-BFFF)\n");
+			exit(1);
+		}
+		for (j = 1; j < np; ++j)
+			if (seg[j] != seg[j - 1] + 1)
+				ovl_die(0, "segments not contiguous (or shared) in overlay ",
+				        ovo_name + (id - 1) * OVSYM);
+
+		putls("  ID");
+		itou(id, str, 3);
+		putls(str);
+		putls(" ");
+		putls(ovo_name + (id - 1) * OVSYM);
+		putls("  seg/page");
+		for (j = 0; j < np; ++j) {
+			ovl_poke(ovtbl + id * OVPAIRS * 4 + j * 4,     seg[j]);
+			ovl_poke(ovtbl + id * OVPAIRS * 4 + j * 4 + 2, pg[j]);
+			itox(seg[j], str, 2);           /* one hex digit               */
+			putls(" ");
+			putls(str);
+			putls("/");
+			itou(pg[j], str, 3);            /* " 4" or "15"                */
+			putls(str[0] == ' ' ? str + 1 : str);
+		}
+		putls("  entries");
+		for (t = 0; t < nove; ++t)
+			if (ovm_ovl[ove_mod[ovord[t]]] == id) {
+				putls(" ");
+				putls(ove_name + ovord[t] * OVSYM);
+			}
+		putls("\n");
+	}
+	if (csfd)
+		lseek(csfd, cspg, SEEK_SET);
+
+	putls("  ");
+	putls(OVGLUEFN);
+	putls(": OVL_TABLE");
+	itou((novo + 1) * OVPAIRS * 4, str, 5);
+	putls(str);
+	putls(" bytes,");
+	itou(nove, str, 4);
+	putls(str);
+	putls(" thunk(s)");
+	itou(nove * 12, str, 5);
+	putls(str);
+	putls(" bytes, resident\n");
+}
+
+/* ==========================================================================
  * phase1  -  Pass 1: load all modules and libraries; link external refs.
  * ======================================================================== */
 phase1(argc, argv)
@@ -2548,7 +3105,10 @@ phase1(argc, argv)
 	char rtbuf[CRELSIZE];           /* scratch buffer for relocation entries  */
 	char firstfn[NAMESIZE];         /* filename that set outfn (may be name-only) */
 	int  i, lib, eof, prev_was_page;
+	int  ovsave_pg, ovsave_end;     /* v3.10.0: -P state around a map module */
+	int  ovemitted;                 /* v3.10.0: OVLGLUE.R99 loaded           */
 	prev_was_page = NO;
+	ovemitted     = NO;
 
 	pass   = 1;
 	csflag = TRUE;
@@ -2755,6 +3315,16 @@ phase1(argc, argv)
 
 		lib = extend(infn, MODEXT, LIBEXT) ? YES : NO;
 
+		/* v3.10.0: a module named in the -Y map takes its page from
+		 * the map.  A -P in front of it as well is a contradiction.  */
+		ovcur = (ovlmode && !lib) ? ovl_find(infn) : -1;
+		if (ovcur >= 0) {
+			if (prev_was_page)
+				ovl_die(0, "page given by -P as well as the map: ", infn);
+			if (ovm_pm[ovcur] >= 0)
+				ovl_die(0, "module loaded twice: ", infn);
+		}
+
 		/* Libraries default to page0 unless explicitly tagged with -P.
 		 * This prevents the common mistake of -P1 module.OBJ lib.LIB
 		 * accidentally tagging the entire library as page1.
@@ -2797,6 +3367,15 @@ phase1(argc, argv)
 			putls("\nSearching Library for symbol-> ");
 			search();
 		} else {
+			if (ovcur >= 0) {
+				ovsave_pg  = curpage;   /* the map's page is for this   */
+				ovsave_end = curpgend;  /* module only; -P state after  */
+				if (!ovemitted) {       /* it is unchanged              */
+					ovl_emit();         /* resident: below the overlays */
+					ovemitted = YES;
+					ovcur = ovl_find(infn);     /* ovl_emit cleared it  */
+				}
+			}
 			inrel = open(infn, O_RDONLY | O_BINARY);
 			if (inrel < 0) {
 				/*
@@ -2814,14 +3393,29 @@ phase1(argc, argv)
 				}
 				error2("\nError opening source file: ", infn);
 			}
+			if (ovcur >= 0) {
+				curpage    = ovm_page[ovcur];
+				curpgend   = ovm_pgend[ovcur];
+			}
 			puts3("\nOpening R99 File ", infn, "\n");
 			ifilelbuf();
 			getname();
 			load();
 			link();
 			close(inrel);
+			if (ovcur >= 0) {
+				ovm_pm[ovcur]   = pm_modidx;
+				ovm_aorg[ovcur] = pm_aorg_valid;
+				curpage  = ovsave_pg;
+				curpgend = ovsave_end;
+				ovcur    = -1;
+			}
 		}
 	}
+
+	/* v3.10.0: every module is in; check the map, fill OVL_TABLE.    */
+	if (ovlmode)
+		ovl_finish();
 
 	/* Multi-pass library search: repeat all libraries until no new links.
 	 * This handles forward references between libraries (e.g. iolib pulls
@@ -3628,7 +4222,7 @@ readdref()
 resolve()
 {
 	char    *node, *nextnode;
-	unsigned epval, value, xbuf;
+	unsigned epval, value, xbuf, fval;
 	char wb[2];
 	char at[7];
 
@@ -3652,21 +4246,31 @@ resolve()
 	else
 		value = epval + cbase;
 
+	/* v3.10.0: the reference word holds the ADDEND.  R99 assembles
+	 * "@SYM+2" against an EXT as ABS 0002 in the word, and this used to
+	 * be overwritten with SYM alone - silently dropping the +2.  A plain
+	 * reference is ABS 0, so adding changes nothing for it; no object
+	 * linked before 3.10.0 carried a non-zero addend.                 */
 	node = getint(xrnext + VAL);
 	while (node) {
 		xbuf = getint(node + VAL);
-		if (xbuf < cdisk)
-			put16int(buffer + xbuf, value);
+		if (xbuf < cdisk) {
+			fval = (value + get16int(buffer + xbuf)) & 0xFFFF;
+			put16int(buffer + xbuf, fval);
+		}
 		else {
-			wb[0] = value >> 8;             /* TMS order (hi,lo)          */
-			wb[1] = value & 0xff;
+			xrseek(xbuf - cdisk);
+			read(csfd, wb, 2);
+			fval = (value + get16int(wb)) & 0xFFFF;
+			wb[0] = fval >> 8;              /* TMS order (hi,lo)          */
+			wb[1] = fval & 0xff;
 			xrseek(xbuf - cdisk);
 			write(csfd, wb, 2);
 		}
 		if (monitor) {
 			putls("\n  xref ");   putls(xrnext + SYM);
 			itox(xbuf, at, 5);    putls(" @");  putls(at);
-			itox(value, at, 5);   putls(" = "); putls(at);
+			itox(fval, at, 5);    putls(" = "); putls(at);
 		}
 		nextnode = getint(node + NXT);
 		putint(node + NXT, sfree);          /* recycle the node           */
@@ -3734,7 +4338,7 @@ seek()
  * ======================================================================== */
 usage()
 {
-	error("\nUsage: link99 [-B] [-S] [-G0xADDR] [-O0xADDR] [-D0xADDR] [-P#] [-M] outname.com module.r99 [module.r99/library.lib...]\n"
+	error("\nUsage: link99 [-B] [-S] [-G0xADDR] [-O0xADDR] [-D0xADDR] [-P#] [-Yovlmap] [-M] outname.com module.r99 [module.r99/library.lib...]\n"
 	      "  outname.com  output executable (explicit .COM extension required)\n"
 	      "  module.r99   relocatable object module (explicit .R99 extension required)\n"
 	      "  -O0xADDR     set code origin address (e.g. -O0x2000 for paged segment 2)\n"
@@ -3743,6 +4347,7 @@ usage()
 	      "  -B           big-endian output\n"
 	      "  -S           Small-C mode\n"
 	      "  -M           monitor/verbose output\n"
+	      "  -Yfile       OVL99 overlay map: pages, IDs, OVL_TABLE and thunks\n"
 	      "  A trailing ^ or , continues the command on the next input line.\n"
 	      "  Transparent GAL mapping: cross-page calls are plain BL/RT, no trampolines.\n"
 	      "  Segment collision (two pages sharing a 4KB virtual segment) is a link error.");
