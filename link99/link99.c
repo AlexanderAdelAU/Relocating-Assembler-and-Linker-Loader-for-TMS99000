@@ -235,6 +235,8 @@
                        per entry under the entry's own name.  Replaces
                        ovlgen.ps1 and DREL -i (OVLADDR/OVLTABLE.INC).
                        The window-owner rule is checked at link time.
+                       A map line "window 8-n" narrows the segments
+                       overlays may use, for data banks above them.
                        See ovl_readmap().  Also: an external reference
                        now ADDS the addend R99 leaves in the word, so
                        @SYM+2 against an EXT works; it was overwritten
@@ -855,6 +857,8 @@ char ove_name[OVMAXENT * OVSYM];    /* entry name as the module exports it  */
 int  ove_mod[OVMAXENT];             /* module (map index) that exports it   */
 int  ove_seen[OVMAXENT];            /* YES: its EPOINT was renamed          */
 int  ovcur;                         /* map index of module being loaded, -1 */
+int  ovwinhi;                       /* last segment overlays may map        */
+int  ovwinset;                      /* YES: the map has a window line       */
 
 /* v3.7: trampoline arrays removed - see emit_trampolines() deletion */
 
@@ -2615,6 +2619,14 @@ okay()
  *   entries  the functions anything outside the module may call, or
  *            "-" for none.
  *
+ * One optional line narrows the window overlays may map:
+ *
+ *     window   8-9         (or "window 8")
+ *
+ * The default is 8-11, all of >8000-BFFF.  An application that keeps
+ * data banks in part of the window (FileEdit: >9000-BFFF) declares the
+ * rest here and the link fails if an overlay strays into its banks.
+ *
  * What -Y does:
  *   1. Each published entry is RENAMED in its overlay module as it
  *      loads: foo becomes ~foo (2.11BSD's convention).  Calls inside
@@ -2711,6 +2723,7 @@ ovl_readmap()
 		n = 0;
 	ovbuf[n] = 0;
 
+	ovwinhi = OVWINHI;
 	p = ovbuf;
 	line = 0;
 	while (*p) {
@@ -2739,6 +2752,14 @@ ovl_readmap()
 		}
 		if (ntok == 0)
 			continue;
+		if (!stricmp(tok[0], "window")) {       /* window lo-hi          */
+			if (ntok != 2 || ovwinset || !ovl_pages(tok[1], &lo, &hi) ||
+			    lo != OVWINLO || hi > OVWINHI)
+				ovl_die(line, "want one 'window 8' to 'window 8-11', not ", tok[1]);
+			ovwinhi  = hi;
+			ovwinset = YES;
+			continue;
+		}
 		if (ntok < 4)
 			ovl_die(line, "want: module page overlay entries...", "");
 
@@ -3011,9 +3032,23 @@ ovl_finish()
 		/* OVCALL saves ONE owner: the overlay OVLMGR records when it
 		 * maps segment 8.  So segment 8 first and once, the rest
 		 * contiguous after it, and nothing past the window.         */
-		if (seg[0] != OVWINLO || seg[np - 1] > OVWINHI)
-			ovl_die(0, "must map segments 8.. inside >8000-BFFF: overlay ",
+		if (seg[0] != OVWINLO)
+			ovl_die(0, "does not map segment 8 first: overlay ",
 			        ovo_name + (id - 1) * OVSYM);
+		if (seg[np - 1] > ovwinhi) {
+			putls("\n*** FATAL: overlay map ");
+			putls(ovmapfn);
+			putls(": overlay ");
+			putls(ovo_name + (id - 1) * OVSYM);
+			putls(" maps segment ");
+			itox(seg[np - 1], str, 2);
+			putls(str);
+			putls(", outside the window 8-");
+			itox(ovwinhi, str, 2);
+			putls(str);
+			putls(ovwinset ? " the map declares\n" : " (>8000-BFFF)\n");
+			exit(1);
+		}
 		for (j = 1; j < np; ++j)
 			if (seg[j] != seg[j - 1] + 1)
 				ovl_die(0, "segments not contiguous (or shared) in overlay ",
