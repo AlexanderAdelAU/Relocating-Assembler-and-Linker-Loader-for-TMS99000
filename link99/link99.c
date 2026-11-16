@@ -3,7 +3,7 @@
  Name        : link99.c K&R version
  Authors     : J. E. Hendrix (original Small-MAC linker, 1985)
                Alex Cameron (TMS9900 port 1984; Eclipse cross-compiler 2015)
- Version     : 3.10.0
+ Version     : 3.10.1
  Copyright   : Free to use
  Description : Relocatable linker/loader for the TMS9900 architecture.
                Based on the Small-MAC linkage editor (ver 1.0).
@@ -246,6 +246,10 @@
                        @SYM+2 against an EXT works; it was overwritten
                        with SYM.  No earlier object used one.  Without -Y the output is
                        byte-identical to 3.9.59.
+ 3.10.1 A. Cameron     Reference-slot lint, formerly DREL -c: every
+                       external reference must be an ABS word the module
+                       emitted, claimed by one symbol.  FATAL otherwise.
+                       Builds no longer need DREL.  Output unchanged.
  3.9.58 (SBC_SMALLC99 structs work)
                        Three faults, each silent, found building a
                        SMALLC99 whose code passed 64K:
@@ -1479,7 +1483,7 @@ int main(argc, argv)
 	int argc; char **argv;
 {
 	putls("----------------------------------------------------\n");
-	putls("TMS9900 Relocatable Object Linker  Version 3.10.0\n");
+	putls("TMS9900 Relocatable Object Linker  Version 3.10.1\n");
 	putls("Original CP/M version: Alexander Cameron, January 1985\n");
 	putls("MSDOS/PC port:         Alexander Cameron, May 2010 - July 2019\n");
 	putls("Explicit XREFS + PREL/AORG CT provenance\n");
@@ -1793,6 +1797,86 @@ char *xnode_alloc()
 }
 
 /* ==========================================================================
+ * v3.10.1: reference-slot lint, formerly DREL -c's job.
+ *
+ * Every external reference location (CHAIN inside an XREFS group) must be
+ * a word the module itself emitted, as an ABS placeholder, claimed by one
+ * symbol only.  A slot outside the module, on a relocatable (PREL/DREL)
+ * word, or in two groups is an assembler fault; patching it would corrupt
+ * code silently.  Checked once per module at EPROG, when its extent is
+ * known (older R99 files emit the XREFS groups before the code).
+ * Output is unchanged unless a check fails.
+ * ======================================================================== */
+#define XLMAX 8192
+unsigned xl_loc[XLMAX];             /* this module's reference slots        */
+char    *xl_sym[XLMAX];             /* ... and the xr entry that owns each  */
+int      xl_n;
+unsigned pl_loc[XLMAX];             /* this module's relocatable words      */
+int      pl_n;
+int      xl_over;                   /* YES: a list filled; check skipped    */
+
+xl_sort(a, b, n)                    /* shell sort a[], carrying b[] if any  */
+	unsigned *a; char **b; int n;
+{
+	int gap, i, j;
+	unsigned t;
+	char *tb;
+	for (gap = n / 2; gap > 0; gap /= 2)
+		for (i = gap; i < n; ++i)
+			for (j = i - gap; j >= 0 && a[j] > a[j + gap]; j -= gap) {
+				t = a[j]; a[j] = a[j + gap]; a[j + gap] = t;
+				if (b) { tb = b[j]; b[j] = b[j + gap]; b[j + gap] = tb; }
+			}
+}
+
+xl_fail(what, sym, loc)
+	char *what, *sym; unsigned loc;
+{
+	char str[9], *sp;
+	putls("\n*** FATAL: module ");
+	putls(modname);
+	putls(": external reference ");
+	putls(sym);
+	putls(" at buffer offset >");
+	itox(loc, str, 7);
+	for (sp = str; *sp == ' '; ++sp)
+		;
+	putls(sp);
+	putls(" ");
+	putls(what);
+	putls("\n    The object file is malformed - reassemble it, and check R99.\n");
+	exit(1);
+}
+
+xl_check(mstart, mend)
+	unsigned mstart, mend;
+{
+	int i, lo, hi, mid;
+	if (xl_over)
+		return;
+	xl_sort(xl_loc, xl_sym, xl_n);
+	xl_sort(pl_loc, 0, pl_n);
+	for (i = 0; i < xl_n; ++i) {
+		if (xl_loc[i] < mstart || xl_loc[i] + 2 > mend)
+			xl_fail("is outside the module", xl_sym[i] + SYM, xl_loc[i]);
+		if (i > 0 && xl_loc[i] == xl_loc[i - 1])
+			xl_fail("is claimed by two symbols", xl_sym[i] + SYM, xl_loc[i]);
+		lo = 0;
+		hi = pl_n - 1;
+		while (lo <= hi) {
+			mid = (lo + hi) / 2;
+			if (pl_loc[mid] == xl_loc[i])
+				xl_fail("is a relocatable word, not an ABS placeholder",
+				        xl_sym[i] + SYM, xl_loc[i]);
+			if (pl_loc[mid] < xl_loc[i])
+				lo = mid + 1;
+			else
+				hi = mid - 1;
+		}
+	}
+}
+
+/* ==========================================================================
  * load  -  Load one module from the current REL file into the code buffer
  *          (or into the overflow file once in-memory space is exhausted).
  * ======================================================================== */
@@ -1824,6 +1908,8 @@ load()
 	pm_aorg_true  = 0;
 	pm_aorg_cloc  = 0;
 	pm_saw_abs_prel = NO;
+	xl_n = pl_n = 0;                /* v3.10.1: reference-slot lint      */
+	xl_over = NO;
 
 	do {
 		poll(YES);
@@ -1930,6 +2016,10 @@ load()
 				/* Build 5-byte entry: [loc:2][chainval:2][type:1]           */
 				if (crelptr >= 65535U)
 					error("- Code relocation table full (65535 entries)\n");
+				if (pl_n < XLMAX)           /* v3.10.1: for xl_check()  */
+					pl_loc[pl_n++] = cloc;
+				else
+					xl_over = YES;
 				put16int(rtbuf,     cloc);
 				rtbuf[5] = cloc >> 16;      /* loc bits 16-23 */
 				put16int(rtbuf + 2, field);
@@ -1988,6 +2078,8 @@ load()
 
 		case EPROG:
 			first_module = NO;  /* no longer in first module */
+			if (csflag)
+				xl_check(cloc_at_ename, cloc);  /* v3.10.1 */
 
 			/*
 			 * Finalise the page-map entry for the module just loaded.
@@ -2405,6 +2497,12 @@ load()
 				char *node = xnode_alloc();
 				putint(node + NXT, getint(xref_sym + VAL)); /* prepend    */
 				putint(node + VAL, xbuf);
+				if (xl_n < XLMAX) {         /* v3.10.1: for xl_check()  */
+					xl_loc[xl_n] = xbuf;
+					xl_sym[xl_n] = xref_sym;
+					++xl_n;
+				} else
+					xl_over = YES;
 				putint(xref_sym + VAL, node);
 				if (--xref_left == 0)
 					in_xrefs = NO;
