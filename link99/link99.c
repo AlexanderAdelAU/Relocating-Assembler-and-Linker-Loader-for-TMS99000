@@ -237,6 +237,10 @@
                        The window-owner rule is checked at link time.
                        A map line "window 8-n" narrows the segments
                        overlays may use, for data banks above them.
+                       Entries may be aliases (R_EXPR=expression, the
+                       routine not renamed) and :tail (map and branch,
+                       no frame); "guest NAME" allows an overlay that
+                       never maps segment 8 (SMALLC99's CLI).
                        See ovl_readmap().  Also: an external reference
                        now ADDS the addend R99 leaves in the word, so
                        @SYM+2 against an EXT works; it was overwritten
@@ -853,12 +857,19 @@ int  ovm_aorg[OVMAXMOD];            /* YES: the module carried an AORG      */
 int  novo;                          /* overlays                             */
 char ovo_name[OVMAXOVL * OVSYM];    /* overlay name, index ID-1             */
 int  nove;                          /* published entries                    */
-char ove_name[OVMAXENT * OVSYM];    /* entry name as the module exports it  */
+char ove_name[OVMAXENT * OVSYM];    /* PUBLIC name: the thunk's name        */
+char ove_real[OVMAXENT * OVSYM];    /* the routine as the module exports it */
+int  ove_alias[OVMAXENT];           /* YES: public=real, routine not renamed */
+int  ove_tail[OVMAXENT];            /* YES: :tail - map and branch, no frame */
 int  ove_mod[OVMAXENT];             /* module (map index) that exports it   */
-int  ove_seen[OVMAXENT];            /* YES: its EPOINT was renamed          */
+int  ove_seen[OVMAXENT];            /* YES: its EPOINT was found            */
+int  ovo_guest[OVMAXOVL];           /* YES: guest - never maps segment 8    */
 int  ovcur;                         /* map index of module being loaded, -1 */
+int  ovdup;                         /* YES: also define ~symbol (alias)     */
 int  ovwinhi;                       /* last segment overlays may map        */
 int  ovwinset;                      /* YES: the map has a window line       */
+int  novg;                          /* guest lines                          */
+char ovg_name[OVMAXOVL * OVSYM];    /* their overlay names, checked at end  */
 
 /* v3.7: trampoline arrays removed - see emit_trampolines() deletion */
 
@@ -2109,7 +2120,18 @@ load()
 				}
 			}
 			ovl_rename();       /* v3.10.0: foo -> ~foo if published */
-			newsym(&epprev, epfirst, "ep");
+			{
+				unsigned ovf = field;   /* newsym may rebase field    */
+				int      ovt = type;
+				newsym(&epprev, epfirst, "ep");
+				if (ovdup) {            /* alias: add ~foo, keep foo  */
+					field = ovf;
+					type  = ovt;
+					ovl_tilde();
+					newsym(&epprev, epfirst, "ep");
+					ovdup = NO;
+				}
+			}
 			break;
 
 		/* ---- Program-segment size record --------------------------------- */
@@ -2619,6 +2641,27 @@ okay()
  *   entries  the functions anything outside the module may call, or
  *            "-" for none.
  *
+ * An entry has three forms:
+ *
+ *     foo                  the routine foo is renamed ~foo in its module
+ *                          and a thunk called foo takes its place
+ *     R_EXPR=expression    alias: a thunk called R_EXPR reaches the
+ *                          routine expression, which is NOT renamed, so
+ *                          direct calls to it are untouched.  Several
+ *                          public names may reach one routine.  The
+ *                          thunk targets ~expression, a copy of THIS
+ *                          module's entry point, never the bare name:
+ *                          another module may define one too.
+ *     ...:tail             either form, suffixed: the thunk maps the
+ *                          overlay and BRANCHES to the routine - no
+ *                          OVCALL frame.  Only for an entry called from
+ *                          resident code that needs nothing mapped back.
+ *
+ * "guest NAME" marks an overlay that maps a part of the window WITHOUT
+ * segment 8, so it never becomes the window owner (SMALLC99's CLI at
+ * >A000).  Safe only with an OVCALL that always takes a frame, so the
+ * caller's whole row is mapped back.  A guest entry cannot be :tail.
+ *
  * One optional line narrows the window overlays may map:
  *
  *     window   8-9         (or "window 8")
@@ -2752,6 +2795,15 @@ ovl_readmap()
 		}
 		if (ntok == 0)
 			continue;
+		if (!stricmp(tok[0], "guest")) {        /* guest OVERLAY         */
+			if (ntok != 2 || strlen(tok[1]) > MAXSYM)
+				ovl_die(line, "want: guest OVERLAY", "");
+			if (novg == OVMAXOVL)
+				ovl_die(line, "too many guest lines", "");
+			strcpy(ovg_name + novg * OVSYM, tok[1]);
+			++novg;
+			continue;
+		}
 		if (!stricmp(tok[0], "window")) {       /* window lo-hi          */
 			if (ntok != 2 || ovwinset || !ovl_pages(tok[1], &lo, &hi) ||
 			    lo != OVWINLO || hi > OVWINHI)
@@ -2795,17 +2847,43 @@ ovl_readmap()
 		ovm_ovl[novm] = k + 1;
 		ovm_pm[novm]  = -1;
 
-		/* entries; ~name must fit the symbol table */
+		/* entries: name | public=real, either with :tail */
 		for (i = 3; i < ntok; ++i) {
+			char *eq, *co, *ent;
 			if (!strcmp(tok[i], "-"))
 				continue;
-			if (strlen(tok[i]) > MAXSYM - 1)
-				ovl_die(line, "entry name longer than 14: ", tok[i]);
-			if (ovl_index(tok[i], ove_name, OVSYM, nove) >= 0)
-				ovl_die(line, "entry published twice: ", tok[i]);
 			if (nove == OVMAXENT)
 				ovl_die(line, "too many entries; raise OVMAXENT", "");
-			strcpy(ove_name + nove * OVSYM, tok[i]);
+			ent = tok[i];
+			ove_tail[nove] = NO;
+			co = strchr(ent, ':');
+			if (co) {
+				if (stricmp(co, ":tail"))
+					ovl_die(line, "only :tail may follow an entry, not ", co);
+				*co = 0;
+				ove_tail[nove] = YES;
+			}
+			eq = strchr(ent, '=');
+			if (eq) {
+				*eq++ = 0;                  /* ent = public, eq = real   */
+				if (!*ent || !*eq || strchr(eq, '='))
+					ovl_die(line, "want public=real, not ", tok[i]);
+				if (strlen(ent) > MAXSYM || strlen(eq) > MAXSYM - 1)
+					ovl_die(line, "public longer than 15 or routine longer than 14: ", tok[i]);
+				ove_alias[nove] = YES;
+			} else {
+				if (strlen(ent) > MAXSYM - 1)   /* ~name must fit        */
+					ovl_die(line, "entry name longer than 14: ", ent);
+				eq = ent;
+				ove_alias[nove] = NO;
+			}
+			if (ovl_index(ent, ove_name, OVSYM, nove) >= 0)
+				ovl_die(line, "public name used twice: ", ent);
+			for (k = 0; k < nove; ++k)          /* ~routine must be unique */
+				if (ove_mod[k] != novm && !strcmp(ove_real + k * OVSYM, eq))
+					ovl_die(line, "routine published by two modules: ", eq);
+			strcpy(ove_name + nove * OVSYM, ent);
+			strcpy(ove_real + nove * OVSYM, eq);
 			ove_mod[nove]  = novm;
 			ove_seen[nove] = NO;
 			++nove;
@@ -2842,20 +2920,56 @@ ovl_rename()
 {
 	int i, n;
 
+	int ren, dup;
+
+	ovdup = NO;
 	if (ovcur < 0)
 		return;
+	ren = dup = NO;
 	for (i = 0; i < nove; ++i) {
-		if (ove_mod[i] == ovcur && !strcmp(symbol, ove_name + i * OVSYM)) {
-			n = strlen(symbol);         /* <= 14: checked in ovl_readmap    */
-			while (n >= 0) {
-				symbol[n + 1] = symbol[n];
-				--n;
-			}
-			symbol[0] = '~';
-			ove_seen[i] = YES;
-			return;
+		if (ove_mod[i] == ovcur && !strcmp(symbol, ove_real + i * OVSYM)) {
+			ove_seen[i] = YES;          /* every entry naming it        */
+			if (ove_alias[i])
+				dup = YES;              /* alias: keep name, add ~copy  */
+			else
+				ren = YES;              /* plain entry: rename          */
 		}
 	}
+	if (ren) {
+		n = strlen(symbol);             /* <= 14: checked in ovl_readmap */
+		while (n >= 0) {
+			symbol[n + 1] = symbol[n];
+			--n;
+		}
+		symbol[0] = '~';
+	} else if (dup)
+		ovdup = YES;                    /* load() adds ~name as well    */
+}
+
+/* ~name for the routine itself.  The thunk must reach THIS module's
+ * routine: SMALLC99, for one, also has resident routines called
+ * statement, test, doasm, expression and setcodes, and a plain name
+ * would bind to whichever the linker met first.                     */
+ovl_tilde()
+{
+	int n;
+	n = strlen(symbol);
+	if (n > MAXSYM - 1)
+		ovl_die(0, "routine name too long for its ~copy: ", symbol);
+	while (n >= 0) {
+		symbol[n + 1] = symbol[n];
+		--n;
+	}
+	symbol[0] = '~';
+}
+
+/* the symbol a thunk branches to: always ~real, the routine in its own
+ * module (renamed for a plain entry, an added copy for an alias)      */
+ovl_target(t, out)
+	int t; char *out;
+{
+	out[0] = '~';
+	strcpy(out + 1, ove_real + t * OVSYM);
 }
 
 /* ---- REL writing helpers --------------------------------------------- */
@@ -2892,8 +3006,8 @@ int      ovord[OVMAXENT];           /* entries in thunk order               */
 
 ovl_emit()
 {
-	int  i, j, k, id, t, tbl, size;
-	char tname[MAXSYM + 1];
+	int  i, j, k, id, t, u, n, tbl, size;
+	char tname[MAXSYM + 1], uname[MAXSYM + 1];
 
 	t = 0;                          /* thunk order: by ID, then map order   */
 	for (id = 1; id <= novo; ++id)
@@ -2918,29 +3032,65 @@ ovl_emit()
 	ovl_put(PSIZE, PREL, size, "");
 	for (k = 0; k < tbl; k += 2)            /* rows filled by ovl_finish   */
 		ovl_word(0);
-	for (t = 0; t < nove; ++t) {            /* one thunk per entry         */
-		ovl_word(0x0201);                   /* LI  R1,id                   */
+	/* One 12-byte thunk per entry.  The target word is at +6 in a
+	 * framed thunk and +10 in a tail thunk (see ovl_tgtoff).
+	 *   framed:  LI R1,id / LI R2,target  / B @OVCALL
+	 *   :tail:   LI R1,id / CALL @OVLMGR  / B @target                  */
+	for (t = 0; t < nove; ++t) {
+		ovl_word(0x0201);                   /* LI   R1,id                  */
 		ovl_word(ovm_ovl[ove_mod[ovord[t]]]);
-		ovl_word(0x0202);                   /* LI  R2,~name                */
-		ovl_word(0);
-		ovl_word(0x0460);                   /* B   @OVCALL                 */
-		ovl_word(0);
+		if (ove_tail[ovord[t]]) {
+			ovl_word(0x2DA0);               /* CALL @OVLMGR  (XOP 6)       */
+			ovl_word(0);
+			ovl_word(0x0460);               /* B    @target                */
+			ovl_word(0);
+		} else {
+			ovl_word(0x0202);               /* LI   R2,target              */
+			ovl_word(0);
+			ovl_word(0x0460);               /* B    @OVCALL                */
+			ovl_word(0);
+		}
 	}
 	ovl_put(EPOINT, PREL, 0, "OVL_TABLE");
 	for (t = 0; t < nove; ++t)
 		ovl_put(EPOINT, PREL, tbl + t * 12, ove_name + ovord[t] * OVSYM);
+
+	/* one XREFS group per target routine; aliases may share one */
 	for (t = 0; t < nove; ++t) {
-		tname[0] = '~';
-		strcpy(tname + 1, ove_name + ovord[t] * OVSYM);
+		ovl_target(ovord[t], tname);
+		for (u = 0; u < t; ++u) {           /* already grouped?            */
+			ovl_target(ovord[u], uname);
+			if (!strcmp(tname, uname))
+				break;
+		}
+		if (u < t)
+			continue;
+		n = 0;
+		for (u = t; u < nove; ++u) {
+			ovl_target(ovord[u], uname);
+			if (!strcmp(tname, uname))
+				++n;
+		}
 		ovl_put(EXT, 0, 0, REL99_EXT_XREFS);
-		ovl_put(XCHAIN, ABS, 1, tname);
-		ovl_put(CHAIN, PREL, tbl + t * 12 + 6, "");
+		ovl_put(XCHAIN, ABS, n, tname);
+		for (u = t; u < nove; ++u) {
+			ovl_target(ovord[u], uname);
+			if (!strcmp(tname, uname))
+				ovl_put(CHAIN, PREL, tbl + u * 12 + (ove_tail[ovord[u]] ? 10 : 6), "");
+		}
 	}
-	if (nove) {
-		ovl_put(EXT, 0, 0, REL99_EXT_XREFS);
-		ovl_put(XCHAIN, ABS, nove, "OVCALL");
+	for (k = 0; k < 2; ++k) {               /* OVCALL (framed), OVLMGR (tail) */
+		n = 0;
 		for (t = 0; t < nove; ++t)
-			ovl_put(CHAIN, PREL, tbl + t * 12 + 10, "");
+			if (ove_tail[ovord[t]] == k)
+				++n;
+		if (!n)
+			continue;
+		ovl_put(EXT, 0, 0, REL99_EXT_XREFS);
+		ovl_put(XCHAIN, ABS, n, k ? "OVLMGR" : "OVCALL");
+		for (t = 0; t < nove; ++t)
+			if (ove_tail[ovord[t]] == k)
+				ovl_put(CHAIN, PREL, tbl + t * 12 + (k ? 6 : 10), "");
 	}
 	ovl_put(EPROG, ABS, 0, "");
 	ovl_put(EFILE, 0, 0, "");
@@ -2992,12 +3142,21 @@ ovl_finish()
 			ovl_die(0, "module has no AORG, so no window address: ",
 			        ovm_name + i * NAMESIZE);
 	}
+	for (i = 0; i < novg; ++i) {            /* guest lines name overlays   */
+		k = ovl_index(ovg_name + i * OVSYM, ovo_name, OVSYM, novo);
+		if (k < 0)
+			ovl_die(0, "guest names no overlay in the map: ", ovg_name + i * OVSYM);
+		ovo_guest[k] = YES;
+	}
+	for (i = 0; i < nove; ++i)
+		if (ove_tail[i] && ovo_guest[ovm_ovl[ove_mod[i]] - 1])
+			ovl_die(0, "a guest overlay's entry cannot be :tail: ", ove_name + i * OVSYM);
 	for (i = 0; i < nove; ++i)
 		if (!ove_seen[i]) {
 			putls("\n*** FATAL: overlay map ");
 			putls(ovmapfn);
 			putls(": ");
-			putls(ove_name + i * OVSYM);
+			putls(ove_real + i * OVSYM);
 			putls(" is not an entry point of ");
 			putls(ovm_name + ove_mod[i] * NAMESIZE);
 			putls("\n    Is it spelled as the module exports it?\n");
@@ -3031,8 +3190,14 @@ ovl_finish()
 		}
 		/* OVCALL saves ONE owner: the overlay OVLMGR records when it
 		 * maps segment 8.  So segment 8 first and once, the rest
-		 * contiguous after it, and nothing past the window.         */
-		if (seg[0] != OVWINLO)
+		 * contiguous after it, and nothing past the window.  A guest
+		 * is the opposite: it must NOT map segment 8, or it would
+		 * become the owner.                                          */
+		if (ovo_guest[id - 1]) {
+			if (seg[0] <= OVWINLO)
+				ovl_die(0, "guest maps segment 8, so it would own the window: overlay ",
+				        ovo_name + (id - 1) * OVSYM);
+		} else if (seg[0] != OVWINLO)
 			ovl_die(0, "does not map segment 8 first: overlay ",
 			        ovo_name + (id - 1) * OVSYM);
 		if (seg[np - 1] > ovwinhi) {
@@ -3070,11 +3235,19 @@ ovl_finish()
 			itou(pg[j], str, 3);            /* " 4" or "15"                */
 			putls(str[0] == ' ' ? str + 1 : str);
 		}
+		if (ovo_guest[id - 1])
+			putls("  (guest)");
 		putls("  entries");
 		for (t = 0; t < nove; ++t)
 			if (ovm_ovl[ove_mod[ovord[t]]] == id) {
 				putls(" ");
 				putls(ove_name + ovord[t] * OVSYM);
+				if (ove_alias[ovord[t]]) {
+					putls("=");
+					putls(ove_real + ovord[t] * OVSYM);
+				}
+				if (ove_tail[ovord[t]])
+					putls(":tail");
 			}
 		putls("\n");
 	}
