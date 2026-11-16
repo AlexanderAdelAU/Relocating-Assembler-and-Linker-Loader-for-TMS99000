@@ -8,7 +8,7 @@
 - J.E. Hendrix — original Small-MAC linker (8080/CP/M, 1985)
 - Alex Cameron — TMS9900 port (1984), Eclipse cross-compiler (2015), ongoing development
 
-**Current version:** 3.9.59
+**Current version:** 3.10.0
 
 ---
 
@@ -20,7 +20,7 @@ This repository holds the Windows **cross** toolchain for the TMS9900/TMS99105. 
 |---|---|---|
 | `r99/` | **r99** | Relocatable cross-assembler: `.A99` source → `.R99` object module |
 | `link99/` | **link99** | Linker: `.R99` modules and libraries → `.COM` or paged `.EXE` (documented below) |
-| `drel/` | **drel** | Dumps `.R99`/`.LIB` files, and generates the overlay include files `OVLADDR.INC` and `OVLTABLE.INC` |
+| `drel/` | **drel** | Dumps and lints `.R99`/`.LIB` files. Its `-i` option (overlay include files) is superseded by `link99 -Y` and will be removed |
 | `Includes/`, `cfunctions/`, `rel99/` | | Shared headers, Small-C run-time functions and the REL file reader/writer used by the tools |
 
 A typical build is: compile C to assembly with `smallcp` (from [Small-C-Plus-for-TMS9900-99000](https://github.com/AlexanderAdelAU/Small-C-Plus-for-TMS9900-99000)), assemble with `r99`, then link with `link99`.
@@ -74,7 +74,7 @@ It stores pointers in `int`s, so build it as 32-bit (it runs fine on 64-bit Wind
 ## Usage
 
 ```
-link99 [-B] [-M] [-O#] [-G#] [-D#] [-S] [-P#] [-PAGES#-#] program [module/library ...]
+link99 [-B] [-M] [-O#] [-G#] [-D#] [-S] [-P#] [-PAGES#-#] [-Ymap] program [module/library ...]
 ```
 
 ### Arguments
@@ -93,10 +93,83 @@ link99 [-B] [-M] [-O#] [-G#] [-D#] [-S] [-P#] [-PAGES#-#] program [module/librar
 | `-O#` | Set code base address to hex `#` (e.g. `-O1000` for EXE files loading at TPA) |
 | `-P#` | Tag the next module as physical page `#` (0–15). Used for overlay modules. |
 | `-PAGES#-#` | Auto-assign pages in range — e.g. `-PAGES2-15` assigns next free page to each module |
+| `-Ymap` | OVL99 overlay map (3.10.0). Pages, overlay table and thunks come from the map — see [Overlay map](#overlay-map--y) |
 | `-B` | Big program — force all code to disk from the start, freeing buffer for symbol table |
 | `-G#` | Make program absolute at hex address `#`; write as `.LGO` instead of `.COM` |
 | `-D#` | Set absolute data segment base to hex address `#` |
 | `-S` | Generate Small-C call wrapper to `main()` |
+
+---
+
+## Overlay map (`-Y`)
+
+From 3.10.0 the linker builds an application's overlay glue itself, as
+2.11BSD's `ovld` did. One text file, the overlay map, declares the
+overlays; nothing in the application's source or build script repeats it.
+
+```
+link99 -O1000 -M -S -YOVLMAP.TXT APP.EXE  STARTUP.R99 MAIN.R99 OVLMGR.R99 OVCALL.R99 ...  OVLA.R99 OVLB.R99  CLIB99.LIB
+```
+
+The overlay modules are listed **without** `-P`; their pages come from the
+map. `OVLMGR` refers to the table with `EXT OVL_TABLE` and includes no
+generated file.
+
+### Map format
+
+One line per overlay module. `#` starts a comment.
+
+```
+# module   page   overlay  entries
+OVLHELLO   4      GREET    hello greet
+OVLGRET2   6      GREET    shout
+OVLBYE     5      BYE      farewell count
+```
+
+| Field | Meaning |
+|---|---|
+| `module` | Base name of an object file on the command line (matched without path or extension). |
+| `page` | Physical page 1–15, or a span `lo-hi` for a module larger than 4K. No page may be used twice. |
+| `overlay` | Modules with the same name are one overlay: one ID, mapped together. IDs are given in order of first appearance. |
+| `entries` | The functions anything outside the module may call, or `-` for none. |
+
+An entry takes one of three forms:
+
+| Form | Thunk | The routine |
+|---|---|---|
+| `foo` | a thunk named `foo` | renamed `~foo` in its module, so every outside call binds to the thunk |
+| `R_EXPR=expression` | a thunk named `R_EXPR` reaching `expression` | keeps its name; direct calls inside its overlay are untouched. Several public names may share one routine |
+| either, suffixed `:tail` | maps the overlay and **branches** — no OVCALL frame | for a top-level entry called from resident code that needs nothing mapped back |
+
+Two optional lines:
+
+| Line | Meaning |
+|---|---|
+| `window 8-n` | Overlays may use segments 8..n only (default `8-11`, all of >8000–BFFF). FileEdit says `window 8`: its document banks are at >9000–BFFF. |
+| `guest NAME` | Overlay `NAME` maps part of the window **without** segment 8, so it never becomes the window owner (SMALLC99's CLI at >A000). Safe only with an OVCALL that always takes a frame. Its entries cannot be `:tail`. |
+
+The virtual segment of a module is its own `AORG`, never the map.
+
+### What the linker does with it
+
+1. **Pages.** Each map module is linked on its map page, as `-P` would.
+2. **Renaming.** A plain entry `foo` is renamed `~foo` as its module loads. For an alias the linker adds a private `~routine` for *that module's* entry point, because another module may define a routine of the same name (SMALLC99's resident `statement`, `test`, `expression`…). Thunks always target `~routine`.
+3. **`OVLGLUE.R99`.** Just before the first overlay module the linker writes and loads one resident module. It holds `OVL_TABLE`, with 10-word rows of five (segment,page) pairs, row = ID×20 and row 0 unused. It also holds one 12-byte thunk per public name:
+
+   ```
+   framed:  LI R1,id / LI R2,~routine / B @OVCALL
+   :tail:   LI R1,id / CALL @OVLMGR   / B @~routine
+   ```
+
+   It is loaded before the overlays because a resident module's address is its place in the link buffer. The table is filled in once every module is in. The file is left on disk for inspection with `drel`.
+4. **Checks**, each a FATAL with the reason:
+   - every map module is on the command line and has an AORG, and every entry is exported by its module;
+   - every overlay maps segment 8 first and once (a guest never maps it);
+   - segments are contiguous, inside the window, at most five pages;
+   - no page is used twice, and no module has both `-P` and a map line.
+
+With `-M` the listing shows every row and binding. Without `-Y` the
+output is byte-identical to 3.9.59.
 
 ---
 
@@ -292,6 +365,9 @@ Key fields:
 | 3.9.8 | `-O#` switch — set `cbase` explicitly for EXE builds |
 | 3.9.9 | Suppress ABS/PREL/DREL/CREL items from `-M` monitor output |
 | 3.9.10 | Fix PREL/cbase for mixed AORG/relocatable builds with `-O#`: phase 1 skips `cmod` add for AORG modules; phase 2 skips `cbase` add for AORG modules; `resolve()` subtracts `cbase` from `xrloc` for correct buffer offset |
+| … | 3.9.11–3.9.58: see the history at the top of `link99/link99.c` |
+| 3.9.59 | XPOFF marker told apart from a relocatable word at buffer offset >FFFE |
+| 3.10.0 | `-Y` overlay map: pages, `OVL_TABLE` and thunks built by the linker; aliases, `:tail`, `guest`, `window`. An external reference now adds the addend left in the word (`@SYM+2` against an EXT) |
 
 ---
 
