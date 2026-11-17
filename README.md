@@ -8,7 +8,7 @@
 - J.E. Hendrix — original Small-MAC linker (8080/CP/M, 1985)
 - Alex Cameron — TMS9900 port (1984), Eclipse cross-compiler (2015), ongoing development
 
-**Current version:** 3.10.0
+**Current version:** 3.10.3
 
 ---
 
@@ -97,7 +97,7 @@ link99 [-B] [-M] [-O#] [-G#] [-D#] [-S] [-P#] [-PAGES#-#] [-Ymap] program [modul
 | `-B` | Big program — force all code to disk from the start, freeing buffer for symbol table |
 | `-G#` | Make program absolute at hex address `#`; write as `.LGO` instead of `.COM` |
 | `-D#` | Set absolute data segment base to hex address `#` |
-| `-S` | Generate Small-C call wrapper to `main()` |
+| `-S` | Accepted for compatibility; it currently has no effect (the flag is read but not used) |
 
 ---
 
@@ -106,6 +106,10 @@ link99 [-B] [-M] [-O#] [-G#] [-D#] [-S] [-P#] [-PAGES#-#] [-Ymap] program [modul
 From 3.10.0 the linker builds an application's overlay glue itself, as
 2.11BSD's `ovld` did. One text file, the overlay map, declares the
 overlays; nothing in the application's source or build script repeats it.
+
+The native SBC LINK99 (in [TMS99105-Native-Toolchain](https://github.com/AlexanderAdelAU/TMS99105-Native-Toolchain/tree/main/link99))
+reads the same map and, given the same arguments, writes the same bytes; it
+refuses page spans (`lo-hi`).
 
 ```
 link99 -O1000 -M -S -YOVLMAP.TXT APP.EXE  STARTUP.R99 MAIN.R99 OVLMGR.R99 OVCALL.R99 ...  OVLA.R99 OVLB.R99  CLIB99.LIB
@@ -368,6 +372,9 @@ Key fields:
 | … | 3.9.11–3.9.58: see the history at the top of `link99/link99.c` |
 | 3.9.59 | XPOFF marker told apart from a relocatable word at buffer offset >FFFE |
 | 3.10.0 | `-Y` overlay map: pages, `OVL_TABLE` and thunks built by the linker; aliases, `:tail`, `guest`, `window`. An external reference now adds the addend left in the word (`@SYM+2` against an EXT) |
+| 3.10.1 | Reference-slot lint (formerly `drel -c`): every external reference must be an ABS word its module emitted, claimed by one symbol; FATAL otherwise. Builds no longer need DREL. Output unchanged |
+| 3.10.2 | FATAL if a resident module ends at or above the lowest overlay address (a library member loaded after the overlays is placed above them by their size). Output unchanged |
+| 3.10.3 | Pages are per segment: paged blocks in different segments are never merged, `-Y` checks (segment, page) pairs, `window 8-n` may reach D. A paged block whose sector padding would cross its segment carries its true size, so an overlay may use its whole 4K page (the old >0FC0 limit) |
 
 ---
 
