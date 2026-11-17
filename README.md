@@ -109,7 +109,9 @@ overlays; nothing in the application's source or build script repeats it.
 
 The native SBC LINK99 (in [TMS99105-Native-Toolchain](https://github.com/AlexanderAdelAU/TMS99105-Native-Toolchain/tree/main/link99))
 reads the same map and, given the same arguments, writes the same bytes; it
-refuses page spans (`lo-hi`).
+refuses page spans (`lo-hi`). The runtime side of OVL99 (thunks, `OVCALL`,
+`OVLMGR`, the rules) is described in
+[OVL99.md](https://github.com/AlexanderAdelAU/TMS99105-Native-Toolchain/blob/main/OVL99.md).
 
 ```
 link99 -O1000 -M -S -YOVLMAP.TXT APP.EXE  STARTUP.R99 MAIN.R99 OVLMGR.R99 OVCALL.R99 ...  OVLA.R99 OVLB.R99  CLIB99.LIB
@@ -133,7 +135,7 @@ OVLBYE     5      BYE      farewell count
 | Field | Meaning |
 |---|---|
 | `module` | Base name of an object file on the command line (matched without path or extension). |
-| `page` | Physical page 1–15, or a span `lo-hi` for a module larger than 4K. No page may be used twice. |
+| `page` | Physical page 1–15, or a span `lo-hi` for a module larger than 4K. Pages are per segment: no (segment, page) pair may be used twice, but page 3 behind segment 8 and page 3 behind segment 9 are different memory (3.10.3). |
 | `overlay` | Modules with the same name are one overlay: one ID, mapped together. IDs are given in order of first appearance. |
 | `entries` | The functions anything outside the module may call, or `-` for none. |
 
@@ -170,7 +172,7 @@ The virtual segment of a module is its own `AORG`, never the map.
    - every map module is on the command line and has an AORG, and every entry is exported by its module;
    - every overlay maps segment 8 first and once (a guest never maps it);
    - segments are contiguous, inside the window, at most five pages;
-   - no page is used twice, and no module has both `-P` and a map line.
+   - no (segment, page) pair is used twice, and no module has both `-P` and a map line.
 
 With `-M` the listing shows every row and binding. Without `-Y` the
 output is byte-identical to 3.9.59.
