@@ -3,7 +3,7 @@
  Name        : link99.c K&R version
  Authors     : J. E. Hendrix (original Small-MAC linker, 1985)
                Alex Cameron (TMS9900 port 1984; Eclipse cross-compiler 2015)
- Version     : 3.10.1
+ Version     : 3.10.2
  Copyright   : Free to use
  Description : Relocatable linker/loader for the TMS9900 architecture.
                Based on the Small-MAC linkage editor (ver 1.0).
@@ -246,6 +246,11 @@
                        @SYM+2 against an EXT works; it was overwritten
                        with SYM.  No earlier object used one.  Without -Y the output is
                        byte-identical to 3.9.59.
+ 3.10.2 A. Cameron     A resident module loaded after the overlays (a
+                       late library member) is placed above them by their
+                       total size.  It is now FATAL if any resident module
+                       ends at or above the lowest overlay address, not
+                       only if it overlaps an overlay.  Output unchanged.
  3.10.1 A. Cameron     Reference-slot lint, formerly DREL -c: every
                        external reference must be an ABS word the module
                        emitted, claimed by one symbol.  FATAL otherwise.
@@ -793,6 +798,7 @@ char swap99[2];         /* TMS9900 byte-swap temporary                      */
  * emit_pagemap() by adding cbase.
  * ---------------------------------------------------------------------- */
 unsigned pmstart[MAXPMODS];   /* absolute start address of page module */
+char     pmname[MAXPMODS][MAXSYM + 1]; /* v3.10.2: module name, for messages */
 unsigned pmend[MAXPMODS];     /* absolute end address (exclusive)      */
 unsigned pmcmod[MAXPMODS];    /* code buffer offset (for emit_page_block) */
 unsigned pmbase[MAXPMODS];    /* original virtual base for EXE split chunks */
@@ -1483,7 +1489,7 @@ int main(argc, argv)
 	int argc; char **argv;
 {
 	putls("----------------------------------------------------\n");
-	putls("TMS9900 Relocatable Object Linker  Version 3.10.1\n");
+	putls("TMS9900 Relocatable Object Linker  Version 3.10.2\n");
 	putls("Original CP/M version: Alexander Cameron, January 1985\n");
 	putls("MSDOS/PC port:         Alexander Cameron, May 2010 - July 2019\n");
 	putls("Explicit XREFS + PREL/AORG CT provenance\n");
@@ -2265,6 +2271,7 @@ load()
 				pmspan[npmods]  = (pmpage[npmods] != 0 &&
 				                   pmpgend[npmods] > pmpage[npmods]);
 				pm_modidx  = npmods;         /* remember for EPROG fixup       */
+				strcpy(pmname[npmods], modname);
 				pm_modsize = field;
 				++npmods;
 			} else {
@@ -3747,6 +3754,41 @@ phase1(argc, argv)
 					putls(" on page ");
 					itox(pmpage[pi], sz, 3); putls(sz);
 					putls(".\n");
+					exit(1);
+				}
+			}
+		}
+
+		/* v3.10.2: every resident module must END BELOW THE WINDOW.
+		 * A resident module's address is cbase + its place in the link
+		 * buffer, so a module loaded after the overlays - typically a
+		 * library member pulled in by the final library passes - sits
+		 * above them by their total size.  The check above catches it
+		 * only if it happens to overlap an overlay's range; landing in
+		 * an unused window segment, or past the window, went unseen
+		 * and broke at run time.                                      */
+		{
+			unsigned winlo = 0xFFFF;
+			for (pi = 0; pi < npmods; pi++)
+				if (pmpage[pi] != 0 && pmend[pi] > pmstart[pi] &&
+				    pmstart[pi] < winlo)
+					winlo = pmstart[pi];
+			for (ri = 0; winlo != 0xFFFF && ri < npmods; ri++) {
+				if (pmpage[ri] != 0 || pmend[ri] <= pmstart[ri])
+					continue;
+				if (pmend[ri] > winlo) {
+					putls("\n*** FATAL: resident module ");
+					putls(pmname[ri]);
+					putls(" at ");
+					itox(pmstart[ri], sz, 6); putls(sz);
+					putls("-");
+					itox(pmend[ri] - 1, sz, 6); putls(sz);
+					putls(" runs into the overlay window at ");
+					itox(winlo, sz, 5); putls(sz);
+					putls(".\n    It was loaded after the overlays, so its address");
+					putls(" includes their size.\n    Usually a library member pulled");
+					putls(" in at the end: name the library\n    (or the module) before");
+					putls(" the first overlay module on the command line.\n");
 					exit(1);
 				}
 			}
