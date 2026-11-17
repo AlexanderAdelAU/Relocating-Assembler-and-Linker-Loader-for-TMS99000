@@ -3,7 +3,7 @@
  Name        : link99.c K&R version
  Authors     : J. E. Hendrix (original Small-MAC linker, 1985)
                Alex Cameron (TMS9900 port 1984; Eclipse cross-compiler 2015)
- Version     : 3.10.2
+ Version     : 3.10.3
  Copyright   : Free to use
  Description : Relocatable linker/loader for the TMS9900 architecture.
                Based on the Small-MAC linkage editor (ver 1.0).
@@ -246,6 +246,18 @@
                        @SYM+2 against an EXT works; it was overwritten
                        with SYM.  No earlier object used one.  Without -Y the output is
                        byte-identical to 3.9.59.
+ 3.10.3 A. Cameron     A page is per SEGMENT (16 segments x 16 pages):
+                       page 3 behind >8000 is not page 3 behind >9000.
+                       merge_pagemap() no longer joins same-numbered
+                       paged blocks in different segments (the loader
+                       maps only a block's first segment, so 8/3 + 9/3
+                       became one bad 8K block).  -Y checks (segment,
+                       page) pairs, not page numbers, and "window 8-n"
+                       may reach D for empty data banks at >C000-DFFF.
+                       And a paged chain block whose sector padding would
+                       cross its segment now carries its true size, as
+                       span blocks already did: the >0FC0 "chain-safe"
+                       limit was this padding (8 x >1F8 = >0FC0).
  3.10.2 A. Cameron     A resident module loaded after the overlays (a
                        late library member) is placed above them by their
                        total size.  It is now FATAL if any resident module
@@ -852,6 +864,9 @@ int            pages_next;          /* next page to auto-assign             */
 #define OVMAPSIZE   8192            /* largest map file read                */
 #define OVWINLO     8               /* window >8000-BFFF: segments 8..11.   */
 #define OVWINHI     11              /* OVCALL owns the window via seg 8.    */
+#define OVWINMAX    13              /* window 8-n may reach D: data banks   */
+                                    /* at >C000-DFFF (the loader refuses    */
+                                    /* code there, so they hold no bytes)   */
 #define OVGLUEFN    "OVLGLUE.R99"   /* generated resident glue module       */
 #define OVSYM       (MAXSYM + 1)    /* stride of the name arrays            */
 
@@ -1025,6 +1040,14 @@ merge_pagemap()
 			for (j = i + 1; j < npmods; j++) {
 				if (pmend[j] == pmstart[j]) continue; /* already dead */
 				if (pmpage[i] != pmpage[j])  continue; /* different pages */
+				/* v3.10.3: a PAGE is per segment - page 3 behind segment
+				 * 8 is not page 3 behind segment 9 - and the loader maps
+				 * only a block's starting segment.  Merging 8/3 with an
+				 * adjacent 9/3 made one 8K "page 3" block whose upper
+				 * half landed in segment 9's page 0.  Page 0 (flat)
+				 * blocks may still merge across segments.            */
+				if (pmpage[i] != 0 &&
+				    (pmstart[i] >> 12) != (pmstart[j] >> 12)) continue;
 				/* overlapping or adjacent -- merge j into i             */
 				if (pmstart[j] <= pmend[i] && pmend[j] >= pmstart[i]) {
 					if (pmstart[j] < pmstart[i]) pmstart[i] = pmstart[j];
@@ -1489,7 +1512,7 @@ int main(argc, argv)
 	int argc; char **argv;
 {
 	putls("----------------------------------------------------\n");
-	putls("TMS9900 Relocatable Object Linker  Version 3.10.2\n");
+	putls("TMS9900 Relocatable Object Linker  Version 3.10.3\n");
 	putls("Original CP/M version: Alexander Cameron, January 1985\n");
 	putls("MSDOS/PC port:         Alexander Cameron, May 2010 - July 2019\n");
 	putls("Explicit XREFS + PREL/AORG CT provenance\n");
@@ -2911,8 +2934,8 @@ ovl_readmap()
 		}
 		if (!stricmp(tok[0], "window")) {       /* window lo-hi          */
 			if (ntok != 2 || ovwinset || !ovl_pages(tok[1], &lo, &hi) ||
-			    lo != OVWINLO || hi > OVWINHI)
-				ovl_die(line, "want one 'window 8' to 'window 8-11', not ", tok[1]);
+			    lo != OVWINLO || hi > OVWINMAX)
+				ovl_die(line, "want one 'window 8' to 'window 8-13', not ", tok[1]);
 			ovwinhi  = hi;
 			ovwinset = YES;
 			continue;
@@ -2930,12 +2953,11 @@ ovl_readmap()
 				ovl_die(line, "module listed twice: ", tok[0]);
 		strcpy(ovm_name + novm * NAMESIZE, tok[0]);
 
-		/* page or span; no physical page may hold two modules */
+		/* page or span.  Two modules may share a page NUMBER in
+		 * different segments; (segment,page) uniqueness is checked in
+		 * ovl_finish(), once each module's AORG gives its segment.  */
 		if (!ovl_pages(tok[1], &lo, &hi))
 			ovl_die(line, "page must be 1-15 or lo-hi, not ", tok[1]);
-		for (i = 0; i < novm; ++i)
-			if (lo <= ovm_pgend[i] && ovm_page[i] <= hi)
-				ovl_die(line, "page already used by ", ovm_name + i * NAMESIZE);
 		ovm_page[novm]  = lo;
 		ovm_pgend[novm] = hi;
 
@@ -3266,6 +3288,34 @@ ovl_finish()
 			putls(ovm_name + ove_mod[i] * NAMESIZE);
 			putls("\n    Is it spelled as the module exports it?\n");
 			exit(1);
+		}
+
+	/* v3.10.3: no (segment,page) may hold two modules */
+	for (i = 0; i < novm; ++i)
+		for (j = i + 1; j < novm; ++j) {
+			int si, sj, ei, ej;
+			si = (pmstart[ovm_pm[i]] >> 12) & 15;
+			sj = (pmstart[ovm_pm[j]] >> 12) & 15;
+			ei = si + ovm_pgend[i] - ovm_page[i];
+			ej = sj + ovm_pgend[j] - ovm_page[j];
+			for (k = si; k <= ei; ++k)
+				if (k >= sj && k <= ej &&
+				    ovm_page[i] + (k - si) == ovm_page[j] + (k - sj)) {
+					putls("\n*** FATAL: overlay map ");
+					putls(ovmapfn);
+					putls(": ");
+					putls(ovm_name + i * NAMESIZE);
+					putls(" and ");
+					putls(ovm_name + j * NAMESIZE);
+					putls(" both use segment ");
+					itox(k, str, 2);
+					putls(str);
+					putls(" page ");
+					itou(ovm_page[i] + (k - si), str, 3);
+					putls(str[0] == ' ' ? str + 1 : str);
+					putls("\n");
+					exit(1);
+				}
 		}
 
 	putls("\nOVL99 overlay map ");
@@ -4177,6 +4227,16 @@ emit_chain_blocks()
 		 * Shell loader (v3.9.57 first attempt).
 		 */
 		if (spanblk[p])
+			size_word = realsz[p];
+		/* v3.10.3: the same for ANY paged block whose padding would
+		 * run past the end of its segment.  A module longer than >0FC0
+		 * (8 x >1F8) needs a ninth block at >xFC0, and copying its full
+		 * padded >1F8 wrote >1B8 zero bytes into the NEXT segment,
+		 * through whatever page that segment had mapped - the reason
+		 * for the builds' ">0FC0 chain-safe" budget.  No block that
+		 * stays inside its segment changes size.                     */
+		else if (pmpage[i] != 0 &&
+		         (pmstart[i] & 0x0FFF) + blksz[p] > 0x1000)
 			size_word = realsz[p];
 		else
 			size_word = blksz[p];
