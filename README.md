@@ -20,7 +20,7 @@ This repository holds the Windows **cross** toolchain for the TMS9900/TMS99105. 
 |---|---|---|
 | `r99/` | **r99** | Relocatable cross-assembler: `.A99` source → `.R99` object module |
 | `link99/` | **link99** | Linker: `.R99` modules and libraries → `.COM` or paged `.EXE` (documented below) |
-| `drel/` | **drel** | Dumps and lints `.R99`/`.LIB` files. Its `-i` option (overlay include files) is superseded by `link99 -Y` and will be removed |
+| `drel/` | **drel** | Dumps and lints `.R99`/`.LIB` files, run by hand. Version 5.0 removed `-i` (overlay include files): `link99 -Y` builds the overlay table and thunks |
 | `Includes/`, `cfunctions/`, `rel99/` | | Shared headers, Small-C run-time functions and the REL file reader/writer used by the tools |
 
 A typical build is: compile C to assembly with `smallcp` (from [Small-C-Plus-for-TMS9900-99000](https://github.com/AlexanderAdelAU/Small-C-Plus-for-TMS9900-99000)), assemble with `r99`, then link with `link99`.
