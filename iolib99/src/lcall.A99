@@ -1,0 +1,679 @@
+;*******************************************************************
+;  LCALL.A99 - 32-bit (long) arithmetic for Small-C on the TMS99105
+;
+;  The 32-bit companion to CALL.A99.  CALL is linked into every
+;  program; LCALL is linked only by programs that use 32-bit values:
+;
+;      link99 ... MAIN.R99 CALL.R99 LCALL.R99 ... CLIB99.LIB
+;
+;  Forgetting it shows up as unresolved names (ladd, _cladd ...).
+;
+;  ---------------------------------------------------------------
+;  A 32-BIT VALUE
+;
+;  Two words, HIGH WORD FIRST - the TMS9900's own byte order, so a
+;  long in memory is exactly what a register pair holds:
+;
+;      int v[2];        v[0] = bits 31-16,  v[1] = bits 15-0
+;
+;  ---------------------------------------------------------------
+;  TWO WAYS IN
+;
+;  1. C-callable functions, usable today from smallcp and SMALLC99.
+;     Every argument is a pointer to a 2-word value, and the result
+;     comes first, as in strcpy.  The result may be one of the
+;     operands:  ladd(a, a, b)  is  a += b.
+;
+;       ladd(r,a,b)   r = a + b          lneg(r,a)    r = -a
+;       lsub(r,a,b)   r = a - b          lcpy(r,a)    r = a
+;       lmul(r,a,b)   r = a * b          lset(r,h,l)  r = h:l (two ints)
+;       ldiv(r,a,b)   r = a / b          itol(r,i)    r = int i, sign-extended
+;       lmod(r,a,b)   r = a % b          utol(r,u)    r = unsigned u
+;       ludiv(r,a,b)  r = a / b unsigned ltoi(a)      low word of a
+;       lumod(r,a,b)  r = a % b unsigned lmul16(r,a,b) r = a * b, two
+;       lshl(r,a,n)   r = a << n                       UNSIGNED ints,
+;       lshr(r,a,n)   r = a >> n logical               full 32 bits
+;       lsar(r,a,n)   r = a >> n arithmetic
+;       lcmp(a,b)     -1, 0, 1 signed    lucmp(a,b)   -1, 0, 1 unsigned
+;
+;       ltod(s,a)  signed decimal text    ltou(s,a)  unsigned decimal
+;       ltox(s,a)  8 hex digits           s is NUL-terminated; each
+;                                         returns s.  s needs 12 bytes.
+;       dtol(r,s)  r = decimal text s (optional - or +); returns the
+;                  address of the first character it did not use
+;
+;     Division follows C: the quotient is truncated toward zero and
+;     the remainder takes the sign of a.  Dividing by zero gives 0.
+;     Shift counts are taken modulo 32.
+;
+;  2. Register helpers for compiled code - the 32-bit counterparts of
+;     _ccmult and _ccdiv, entered by BL and left by RT:
+;
+;       primary   R4:R5  (R4 = high)    operand   R2:R3
+;       result    R4:R5                 remainder R2:R3 (divides)
+;
+;       _cladd _clsub _clmul            R4:R5 = R4:R5 op R2:R3
+;       _cldiv _cludiv                  quotient R4:R5, remainder R2:R3
+;       _clneg                          R4:R5 = -R4:R5
+;       _clcmp _clucmp                  R4 = -1, 0, 1
+;       _clshl _clshr _clsar            R4:R5 shifted by R0 (0-31)
+;
+;     They use R0-R5 and R11 only, like CALL.  The C functions above
+;     are thin wrappers round them, so SMALLC99 can emit BL @_cladd
+;     when it gains a long type, and nothing here changes.
+;*******************************************************************
+
+	DXOP	CALL,6
+	DXOP	RET,7
+
+R0	EQU	0
+R1	EQU	1
+R2	EQU	2
+R3	EQU	3
+R4	EQU	4
+R5	EQU	5
+SP	EQU	10
+R11	EQU	11
+
+TEN:	WORD	10
+
+;*******************************************************************
+;  REGISTER HELPERS
+;*******************************************************************
+
+;--- R4:R5 += R2:R3 ---
+_cladd:
+	A	R3,R5
+	JNC	$+4
+	INC	R4
+	A	R2,R4
+	RT
+
+;--- R4:R5 -= R2:R3 ---  (S sets carry when there is NO borrow)
+_clsub:
+	S	R3,R5
+	JOC	$+4
+	DEC	R4
+	S	R2,R4
+	RT
+
+;--- R4:R5 = -R4:R5 ---
+_clneg:
+	INV	R4
+	INV	R5
+	INC	R5
+	JNC	$+4
+	INC	R4
+	RT
+
+;--- R4:R5 *= R2:R3, low 32 bits (the same for signed and unsigned) ---
+;    a*b = al*bl + ((ah*bl + al*bh) << 16), mod 2^32
+_clmul:
+	MOV	R5,R0
+	MPY	R2,R0			;R0:R1 = al*bh
+	MOV	R1,R2			;R2 = its low word (bh no longer needed)
+	MOV	R5,R0
+	MPY	R3,R0			;R0:R1 = al*bl
+	A	R2,R0
+	MPY	R3,R4			;R4:R5 = ah*bl
+	A	R5,R0
+	MOV	R0,R4
+	MOV	R1,R5
+	RT
+
+;--- unsigned R4:R5 / R2:R3: quotient R4:R5, remainder R2:R3 ---
+_cludiv:
+	MOV	R2,R2
+	JNE	LUBIG			;divisor >= 65536
+	MOV	R3,R3
+	JEQ	LUZERO			;divide by zero
+;   divisor < 65536: two hardware divides, high word then low word.
+;   DIV Rs,Rd divides the pair Rd:Rd+1; each remainder < divisor, so
+;   neither divide can overflow.
+	CLR	R0
+	MOV	R4,R1
+	DIV	R3,R0			;R0 = ah / b, R1 = ah % b
+	MOV	R0,R4
+	MOV	R1,R0
+	MOV	R5,R1
+	DIV	R3,R0			;R0 = (rem:al) / b, R1 = remainder
+	MOV	R0,R5
+	MOV	R1,R3
+	RT				;R2 is already 0
+LUZERO:
+	CLR	R4
+	CLR	R5
+	CLR	R2
+	CLR	R3
+	RT
+;   divisor >= 65536: the quotient fits in 16 bits.  Shift and
+;   subtract, 16 rounds: the remainder R0:R1 starts as ah and takes
+;   one bit of al per round; the quotient bits fill R5 from the
+;   bottom as al's bits leave it from the top.  R4 marks a bit
+;   carried out of the remainder, which makes it >= the divisor.
+LUBIG:
+	DECT	SP
+	MOV	R11,*SP
+	CLR	R0
+	MOV	R4,R1
+	LI	R11,16
+LUB1:
+	CLR	R4
+	A	R0,R0			;remainder <<= 1 ...
+	JNC	LUB2
+	INC	R4			;... bit 31 fell off
+LUB2:
+	A	R1,R1
+	JNC	LUB3
+	INC	R0
+LUB3:
+	A	R5,R5			;next bit of al into the remainder
+	JNC	LUB4
+	INC	R1
+LUB4:
+	MOV	R4,R4
+	JNE	LUBSUB
+	C	R0,R2
+	JH	LUBSUB
+	JL	LUBNXT
+	C	R1,R3
+	JL	LUBNXT
+LUBSUB:
+	S	R3,R1			;remainder -= divisor
+	JOC	$+4
+	DEC	R0
+	S	R2,R0
+	INC	R5			;quotient bit = 1
+LUBNXT:
+	DEC	R11
+	JNE	LUB1
+	CLR	R4			;quotient = 0:R5
+	MOV	R0,R2
+	MOV	R1,R3
+	MOV	*SP+,R11
+	RT
+
+;--- signed R4:R5 / R2:R3: quotient R4:R5, remainder R2:R3 ---
+;    Divides the magnitudes, then sets the signs as C does: the
+;    quotient is negative if the signs differ, the remainder takes
+;    the sign of the dividend.  R0 bit 0 = negate the quotient,
+;    bit 1 = negate the remainder.
+_cldiv:
+	DECT	SP
+	MOV	R11,*SP
+	CLR	R0
+	MOV	R4,R4
+	JLT	LSD1
+	JMP	LSD2
+LSD1:
+	BL	@_clneg
+	LI	R0,3
+LSD2:
+	MOV	R2,R2
+	JLT	LSD3
+	JMP	LSD4
+LSD3:
+	INV	R2			;negate the divisor
+	INV	R3
+	INC	R3
+	JNC	$+4
+	INC	R2
+	LI	R1,1
+	XOR	R1,R0
+LSD4:
+	DECT	SP
+	MOV	R0,*SP
+	BL	@_cludiv
+	MOV	*SP+,R0
+	MOV	R0,R1
+	ANDI	R1,1
+	JEQ	LSD5
+	BL	@_clneg
+LSD5:
+	ANDI	R0,2
+	JEQ	LSD6
+	INV	R2			;negate the remainder
+	INV	R3
+	INC	R3
+	JNC	$+4
+	INC	R2
+LSD6:
+	MOV	*SP+,R11
+	RT
+
+;--- compare R4:R5 with R2:R3: R4 = -1, 0, 1 ---
+_clcmp:
+	C	R4,R2
+	JGT	LCGT			;high words compare signed
+	JLT	LCLT
+	JMP	LCLOW
+_clucmp:
+	C	R4,R2
+	JH	LCGT			;high words compare unsigned
+	JL	LCLT
+LCLOW:
+	C	R5,R3			;low words always unsigned
+	JH	LCGT
+	JL	LCLT
+	CLR	R4
+	RT
+LCGT:
+	LI	R4,1
+	RT
+LCLT:
+	SETO	R4
+	RT
+
+;--- shifts of R4:R5 by R0 (mod 32) ---
+;    A register shift with a zero count field takes its count from
+;    R0; the code only ever does that with R0 = 1..15.
+_clshl:
+	ANDI	R0,31
+	JEQ	LSHX
+	CI	R0,16
+	JL	LSHL1
+	MOV	R5,R4
+	CLR	R5
+	AI	R0,-16
+	JEQ	LSHX
+	SLA	R4,0
+	RT
+LSHL1:
+	MOV	R5,R1
+	SLA	R4,0
+	SLA	R5,0
+	NEG	R0
+	AI	R0,16
+	SRL	R1,0			;the bits that cross to the high word
+	SOC	R1,R4
+LSHX:
+	RT
+
+_clshr:
+	ANDI	R0,31
+	JEQ	LSHX
+	CI	R0,16
+	JL	LSHR1
+	MOV	R4,R5
+	CLR	R4
+	AI	R0,-16
+	JEQ	LSHX
+	SRL	R5,0
+	RT
+LSHR1:
+	MOV	R4,R1
+	SRL	R4,0
+LSHR2:
+	SRL	R5,0
+	NEG	R0
+	AI	R0,16
+	SLA	R1,0			;the bits that cross to the low word
+	SOC	R1,R5
+	RT
+
+_clsar:
+	ANDI	R0,31
+	JEQ	LSHX
+	CI	R0,16
+	JL	LSAR1
+	MOV	R4,R5
+	SRA	R4,15			;sign fill
+	AI	R0,-16
+	JEQ	LSHX
+	SRA	R5,0
+	RT
+LSAR1:
+	MOV	R4,R1
+	SRA	R4,0
+	JMP	LSHR2
+
+;*******************************************************************
+;  C-CALLABLE FUNCTIONS
+;
+;  Small-C pushes arguments left to right and the XOP CALL pushes the
+;  return word, so on entry the LAST argument is at @2(SP):
+;      f(r,a,b):   @2(SP) = b   @4(SP) = a   @6(SP) = r
+;  The caller removes the arguments.  The result, if any, is in R4.
+;*******************************************************************
+
+;--- load a = *@4(SP) into R4:R5 and b = *@2(SP) into R2:R3 ---
+LDAB:
+	MOV	@4(SP),R1
+	MOV	*R1,R4
+	MOV	@2(R1),R5
+	MOV	@2(SP),R1
+	MOV	*R1,R2
+	MOV	@2(R1),R3
+	RT
+
+;--- store R4:R5 to *@6(SP) ---
+ST6:
+	MOV	@6(SP),R1
+	MOV	R4,*R1
+	MOV	R5,@2(R1)
+	RT
+
+;--- store R4:R5 to *@4(SP) ---
+ST4:
+	MOV	@4(SP),R1
+	MOV	R4,*R1
+	MOV	R5,@2(R1)
+	RT
+
+;--- load *@2(SP) into R4:R5 ---
+LD2:
+	MOV	@2(SP),R1
+	MOV	*R1,R4
+	MOV	@2(R1),R5
+	RT
+
+ladd:
+	BL	@LDAB
+	BL	@_cladd
+	BL	@ST6
+	RET
+
+lsub:
+	BL	@LDAB
+	BL	@_clsub
+	BL	@ST6
+	RET
+
+lmul:
+	BL	@LDAB
+	BL	@_clmul
+	BL	@ST6
+	RET
+
+ldiv:
+	BL	@LDAB
+	BL	@_cldiv
+	BL	@ST6
+	RET
+
+ludiv:
+	BL	@LDAB
+	BL	@_cludiv
+	BL	@ST6
+	RET
+
+lmod:
+	BL	@LDAB
+	BL	@_cldiv
+LMOD1:
+	MOV	R2,R4			;the remainder is the result
+	MOV	R3,R5
+	BL	@ST6
+	RET
+
+lumod:
+	BL	@LDAB
+	BL	@_cludiv
+	JMP	LMOD1
+
+lcmp:
+	BL	@LDAB
+	BL	@_clcmp
+	RET
+
+lucmp:
+	BL	@LDAB
+	BL	@_clucmp
+	RET
+
+;--- lshl(r,a,n): @2 = n, @4 = a, @6 = r ---
+lshl:
+	BL	@LDSH
+	BL	@_clshl
+	BL	@ST6
+	RET
+
+lshr:
+	BL	@LDSH
+	BL	@_clshr
+	BL	@ST6
+	RET
+
+lsar:
+	BL	@LDSH
+	BL	@_clsar
+	BL	@ST6
+	RET
+
+LDSH:
+	MOV	@4(SP),R1
+	MOV	*R1,R4
+	MOV	@2(R1),R5
+	MOV	@2(SP),R0
+	RT
+
+;--- lneg(r,a): @2 = a, @4 = r ---
+lneg:
+	BL	@LD2
+	BL	@_clneg
+	BL	@ST4
+	RET
+
+lcpy:
+	BL	@LD2
+	BL	@ST4
+	RET
+
+;--- lset(r,hi,lo): @2 = lo, @4 = hi, @6 = r ---
+lset:
+	MOV	@4(SP),R4
+	MOV	@2(SP),R5
+	BL	@ST6
+	RET
+
+;--- itol(r,i), utol(r,u): @2 = the int, @4 = r ---
+itol:
+	MOV	@2(SP),R5
+	MOV	R5,R4
+	SRA	R4,15
+	BL	@ST4
+	RET
+
+utol:
+	MOV	@2(SP),R5
+	CLR	R4
+	BL	@ST4
+	RET
+
+;--- ltoi(a): the low word ---
+ltoi:
+	MOV	@2(SP),R1
+	MOV	@2(R1),R4
+	RET
+
+;--- lmul16(r,a,b): @2 = b, @4 = a, @6 = r; unsigned 16 x 16 -> 32 ---
+lmul16:
+	MOV	@4(SP),R4
+	MPY	@2(SP),R4		;R4:R5 = a * b
+	BL	@ST6
+	RET
+
+;*******************************************************************
+;  TEXT
+;*******************************************************************
+
+;--- ltou(s,a), ltod(s,a): @2 = a, @4 = s; return s ---
+ltod:
+	BL	@LD2
+	MOV	@4(SP),R2
+	MOV	R4,R4
+	JLT	LTD1
+	JMP	LTD2
+LTD1:
+	LI	R1,02D00H		;'-'
+	MOVB	R1,*R2+
+	BL	@_clneg
+LTD2:
+	BL	@UDEC
+	MOV	@4(SP),R4
+	RET
+
+ltou:
+	BL	@LD2
+	MOV	@4(SP),R2
+	BL	@UDEC
+	MOV	@4(SP),R4
+	RET
+
+;   R4:R5 in decimal at R2, NUL-terminated.  The digits come out
+;   lowest first (two divides by 10 per digit), then are reversed.
+UDEC:
+	MOV	R2,R3			;first digit
+UDEC1:
+	CLR	R0
+	MOV	R4,R1
+	DIV	@TEN,R0
+	MOV	R0,R4
+	MOV	R1,R0
+	MOV	R5,R1
+	DIV	@TEN,R0
+	MOV	R0,R5
+	AI	R1,48			;'0' + digit
+	SWPB	R1
+	MOVB	R1,*R2+
+	MOV	R4,R4
+	JNE	UDEC1
+	MOV	R5,R5
+	JNE	UDEC1
+	CLR	R1
+	MOVB	R1,*R2			;NUL
+	DEC	R2			;last digit
+UDEC2:
+	C	R3,R2
+	JHE	UDEC3
+	MOVB	*R3,R0
+	MOVB	*R2,*R3+
+	MOVB	R0,*R2
+	DEC	R2
+	JMP	UDEC2
+UDEC3:
+	RT
+
+;--- ltox(s,a): eight hex digits; @2 = a, @4 = s; return s ---
+ltox:
+	BL	@LD2
+	MOV	@4(SP),R2
+	MOV	R4,R1
+	BL	@HEX4
+	MOV	R5,R1
+	BL	@HEX4
+	CLR	R1
+	MOVB	R1,*R2
+	MOV	@4(SP),R4
+	RET
+
+;   R1 as four hex digits at R2
+HEX4:
+	LI	R3,4
+HEX41:
+	MOV	R1,R0
+	SRL	R0,12
+	CI	R0,10
+	JL	HEX42
+	AI	R0,7			;'A' - '0' - 10
+HEX42:
+	AI	R0,48
+	SWPB	R0
+	MOVB	R0,*R2+
+	SLA	R1,4
+	DEC	R3
+	JNE	HEX41
+	RT
+
+;--- dtol(r,s): @2 = s, @4 = r; returns the first unused character ---
+;   R11 walks the text.  The sign is kept on the stack, and each
+;   digit is parked there while R4:R5 is multiplied by 10.
+dtol:
+	MOV	@2(SP),R11
+	CLR	R4
+	CLR	R5
+	CLR	R0
+	MOVB	*R11,R1
+	SRL	R1,8
+	CI	R1,45			;'-'
+	JNE	DTL1
+	INC	R0
+	INC	R11
+	JMP	DTL2
+DTL1:
+	CI	R1,43			;'+'
+	JNE	DTL2
+	INC	R11
+DTL2:
+	DECT	SP
+	MOV	R0,*SP			;sign; r is now at @6(SP)
+DTL3:
+	MOVB	*R11,R2
+	SRL	R2,8
+	AI	R2,-48
+	JLT	DTL4
+	CI	R2,9
+	JGT	DTL4
+	INC	R11
+	DECT	SP
+	MOV	R2,*SP			;the digit
+	MOV	R5,R0
+	MPY	@TEN,R0			;R0:R1 = low * 10
+	MOV	R4,R2
+	MPY	@TEN,R2			;R2:R3 = high * 10
+	A	R3,R0
+	MOV	R0,R4
+	MOV	R1,R5
+	MOV	*SP+,R2
+	A	R2,R5
+	JNC	DTL3
+	INC	R4
+	JMP	DTL3
+DTL4:
+	MOV	R11,R3			;the BLs below reuse R11
+	MOV	*SP+,R0
+	MOV	R0,R0
+	JEQ	DTL5
+	BL	@_clneg
+DTL5:
+	BL	@ST4
+	MOV	R3,R4
+	RET
+
+	ENT	_cladd
+	ENT	_clsub
+	ENT	_clneg
+	ENT	_clmul
+	ENT	_cludiv
+	ENT	_cldiv
+	ENT	_clcmp
+	ENT	_clucmp
+	ENT	_clshl
+	ENT	_clshr
+	ENT	_clsar
+
+	ENT	ladd
+	ENT	lsub
+	ENT	lmul
+	ENT	ldiv
+	ENT	lmod
+	ENT	ludiv
+	ENT	lumod
+	ENT	lcmp
+	ENT	lucmp
+	ENT	lshl
+	ENT	lshr
+	ENT	lsar
+	ENT	lneg
+	ENT	lcpy
+	ENT	lset
+	ENT	itol
+	ENT	utol
+	ENT	ltoi
+	ENT	lmul16
+	ENT	ltod
+	ENT	ltou
+	ENT	ltox
+	ENT	dtol
+
+	END

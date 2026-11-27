@@ -255,6 +255,31 @@ link99 program.COM main.R99 clib99.LIB iolib99.LIB
 
 Libraries are searched **multi-pass** — after all command-line arguments are processed, all libraries are re-searched repeatedly until no new modules are loaded. This resolves cross-library dependencies regardless of library order.
 
+### 32-bit arithmetic: `LCALL.R99`
+
+`iolib99/src/call.A99` holds the helpers compiled code calls for 16-bit
+arithmetic (`_ccmult`, `_ccdiv` …); `CALL.R99` is linked into every program.
+`iolib99/src/lcall.A99` is its 32-bit companion, linked only by programs that
+use 32-bit values:
+
+```
+link99 -O1000 program.COM startup.R99 main.R99 call.R99 lcall.R99 clib99.LIB
+```
+
+- A 32-bit value is two words, high word first: `int v[2]`.
+- C-callable, result first: `ladd(r,a,b)`, `lsub`, `lmul`, `ldiv`, `lmod`,
+  `ludiv`, `lumod`, `lneg`, `lshl`/`lshr`/`lsar`, `lcmp`/`lucmp`, `lcpy`,
+  `lset(r,hi,lo)`, `itol`, `utol`, `ltoi`, `lmul16` (16×16→32),
+  `ltod`/`ltou`/`ltox` (text) and `dtol` (from text). The header of
+  `lcall.A99` lists them all.
+- Register helpers for compiled code, entered by `BL` like `_ccmult`: value in
+  `R4:R5`, operand in `R2:R3` — `_cladd`, `_clsub`, `_clmul`, `_cldiv`,
+  `_cludiv`, `_clneg`, `_clcmp`, `_clucmp`, `_clshl`, `_clshr`, `_clsar`.
+  A compiler with a `long` type calls these; the C functions are wrappers
+  round them.
+- 1,008 bytes. Tested by `link99/tests/lcall` in the TMS99105-Native-Toolchain
+  repository (1,504 checks).
+
 ---
 
 ## REL File Format
